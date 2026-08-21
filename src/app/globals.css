@@ -1,0 +1,150 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  /* Slate & Emerald Design System Colors */
+  --surface: #f8f9ff;
+  --surface-dim: #ccdbf2;
+  --surface-bright: #f8f9ff;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #eef4ff;
+  --surface-container: #e5efff;
+  --surface-container-high: #dbe9ff;
+  --surface-container-highest: #d4e4fa;
+  --on-surface: #0d1c2d;
+  --on-surface-variant: #45464d;
+  --inverse-surface: #233143;
+  --inverse-on-surface: #e9f1ff;
+  --outline: #76777d;
+  --outline-variant: #c6c6cd;
+  --surface-tint: #565e74;
+  
+  --primary: #0f172a;
+  --on-primary: #ffffff;
+  --primary-container: #131b2e;
+  --on-primary-container: #7c839b;
+  --inverse-primary: #bec6e0;
+  
+  --secondary: #006c49;
+  --on-secondary: #ffffff;
+  --secondary-container: #6cf8bb;
+  --on-secondary-container: #00714d;
+  
+  --background: #f8f9ff;
+  --on-background: #0d1c2d;
+  
+  --font-inter: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--on-background);
+  font-family: var(--font-inter);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Typography Utilities */
+.text-display {
+  font-family: var(--font-inter);
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 56px;
+  letter-spacing: -0.02em;
+}
+
+.text-headline-lg {
+  font-family: var(--font-inter);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 40px;
+  letter-spacing: -0.02em;
+}
+
+.text-headline-lg-mobile {
+  font-family: var(--font-inter);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
+  letter-spacing: -0.01em;
+}
+
+.text-headline-md {
+  font-family: var(--font-inter);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  letter-spacing: -0.01em;
+}
+
+.text-body-lg {
+  font-family: var(--font-inter);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+.text-body-md {
+  font-family: var(--font-inter);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.text-body-sm {
+  font-family: var(--font-inter);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.text-label-caps {
+  font-family: var(--font-inter);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.text-button-label {
+  font-family: var(--font-inter);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* Glassmorphism & Elevation Utilities */
+.elevation-0 {
+  background-color: var(--background);
+}
+
+.elevation-1 {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.elevation-2 {
+  background-color: #ffffff;
+  box-shadow: 0px 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.glass-bar {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0px -4px 16px rgba(15, 23, 42, 0.04);
+}
+
+/* Component Radii */
+.radius-component {
+  border-radius: 0.5rem; /* 8px */
+}
+
+.radius-container {
+  border-radius: 1.5rem; /* 24px */
+}
+
+.radius-pill {
+  border-radius: 9999px;
+}
