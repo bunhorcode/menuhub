@@ -16,6 +16,7 @@ import {
   deleteMenuItem,
   uploadStoreImage,
 } from "@/lib/store-data"
+import { ImageCropperModal } from "./image-cropper-modal"
 
 const SAMPLE_IMAGES = [
   { name: "Fashion & Apparel", url: "/images/bistro_delight.jpg" },
@@ -85,6 +86,11 @@ export function SellerPortal({ user }: { user: User }) {
   const [isUploadingItemImg, setIsUploadingItemImg] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
+  // Cropper states
+  const [isCropperOpen, setIsCropperOpen] = useState(false)
+  const [cropperSrc, setCropperSrc] = useState<string | null>(null)
+  const [cropperTarget, setCropperTarget] = useState<"store" | "product" | null>(null)
+
   const [stores, setStores] = useState<Store[]>([])
   const [selectedStoreId, setSelectedStoreId] = useState<string>("")
   const [menuItems, setMenuItems] = useState<StoreMenuItem[]>([])
@@ -116,32 +122,64 @@ export function SellerPortal({ user }: { user: User }) {
   const [itemPrepTime, setItemPrepTime] = useState("Same-Day Dispatch")
   const [itemAvailable, setItemAvailable] = useState(true)
 
-  const handleUploadProductImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadProductImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setIsUploadingItemImg(true)
-    setUploadError(null)
-    const { url, error } = await uploadStoreImage(file, "products")
-    if (url) {
-      setItemImage(url)
-    } else {
-      setUploadError(error || "Upload failed. Please check Supabase storage configuration.")
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setCropperSrc(reader.result)
+        setCropperTarget("product")
+        setIsCropperOpen(true)
+      }
     }
-    setIsUploadingItemImg(false)
+    reader.readAsDataURL(file)
+    e.target.value = ""
   }
 
-  const handleUploadStoreCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadStoreCover = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setIsUploadingStoreImg(true)
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setCropperSrc(reader.result)
+        setCropperTarget("store")
+        setIsCropperOpen(true)
+      }
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ""
+  }
+
+  const handleCropComplete = async (blob: Blob) => {
+    const target = cropperTarget || "product"
+    const folder = target === "store" ? "stores" : "products"
+    const fileName = `${target}_cropped_${Date.now()}.jpg`
+    const file = new File([blob], fileName, { type: "image/jpeg" })
+
+    if (target === "store") {
+      setIsUploadingStoreImg(true)
+    } else {
+      setIsUploadingItemImg(true)
+    }
     setUploadError(null)
-    const { url, error } = await uploadStoreImage(file, "stores")
+
+    const { url, error } = await uploadStoreImage(file, folder)
     if (url) {
-      setStoreImage(url)
+      if (target === "store") {
+        setStoreImage(url)
+      } else {
+        setItemImage(url)
+      }
+      setIsCropperOpen(false)
+      setCropperSrc(null)
     } else {
       setUploadError(error || "Upload failed. Please check Supabase storage configuration.")
     }
+
     setIsUploadingStoreImg(false)
+    setIsUploadingItemImg(false)
   }
 
   // Load seller data from Supabase
@@ -1170,7 +1208,24 @@ export function SellerPortal({ user }: { user: User }) {
           </div>
         </div>
       )}
+
+      {/* Interactive 1:1 Image Cropper Modal */}
+      <ImageCropperModal
+        isOpen={isCropperOpen}
+        imageSrc={cropperSrc || ""}
+        title={
+          cropperTarget === "store"
+            ? "Crop Store Cover (1:1 Square)"
+            : "Crop Product Photo (1:1 Square)"
+        }
+        onClose={() => {
+          setIsCropperOpen(false)
+          setCropperSrc(null)
+        }}
+        onCropComplete={handleCropComplete}
+      />
     </div>
   )
 }
+
 

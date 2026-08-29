@@ -276,14 +276,14 @@ export default function MenuHubScreen() {
                 onClick={() => setActiveRestaurant(rest)}
                 className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer group"
               >
-                {/* Card Image */}
-                <div className="relative aspect-[4/3] w-full bg-[#eef4ff] overflow-hidden">
+                {/* Card Image - Square Frame with Full Image */}
+                <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
                   <Image
                     src={rest.image}
                     alt={rest.name}
                     fill
                     sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                    className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
                   />
 
                   {/* Category Badge */}
@@ -379,14 +379,14 @@ export default function MenuHubScreen() {
                   className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between group"
                 >
                   <div>
-                    {/* Compact Image */}
-                    <div className="relative aspect-[4/3] w-full bg-[#eef4ff] overflow-hidden">
+                    {/* Compact Square Image Frame - Full Image */}
+                    <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
                       <Image
                         src={item.image}
                         alt={item.name}
                         fill
                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
                       />
 
                       {/* Out of Stock Overlay */}
