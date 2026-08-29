@@ -15,7 +15,7 @@ function SignupForm() {
     <div className="min-h-screen bg-[#f8f9ff] text-[#0d1c2d] flex flex-col justify-center items-center px-4 py-12">
       {/* Brand Header */}
       <div className="mb-8 text-center">
-        <Link href="/" className="inline-flex items-center gap-2 mb-2">
+        <Link href="/home" className="inline-flex items-center gap-2 mb-2">
           <span className="text-2xl font-bold tracking-tight text-[#0d1c2d]">MenuHub</span>
           <span className="text-xs font-bold text-[#006c49] bg-[#eef4ff] px-2.5 py-0.5 rounded-full border border-[#ccdbf2]">
             Digital Menu
@@ -180,7 +180,7 @@ function SignupForm() {
       </div>
 
       <Link
-        href="/"
+        href="/home"
         className="mt-6 text-xs font-medium text-[#76777d] hover:text-[#0d1c2d] transition-colors"
       >
         ← Back to home

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { logoutAction } from "@/app/auth/actions"
+import { SellerPortal } from "./seller-portal"
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -27,7 +28,7 @@ export default async function DashboardPage() {
       {/* Top Navbar */}
       <header className="bg-white border-b border-[#eef4ff] sticky top-0 z-40 shadow-xs">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
+          <Link href="/home" className="flex items-center gap-3">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#0d1c2d]">MenuHub</h1>
             <span className="text-[11px] font-semibold text-[#00714d] bg-[#eef4ff] px-2.5 py-0.5 rounded-full border border-[#ccdbf2]">
               User Portal
@@ -36,7 +37,7 @@ export default async function DashboardPage() {
 
           <div className="flex items-center gap-3 sm:gap-4">
             <Link
-              href="/"
+              href="/home"
               className="text-xs sm:text-sm font-semibold text-[#45464d] hover:text-[#006c49] transition-colors"
             >
               Browse Menus
@@ -60,7 +61,7 @@ export default async function DashboardPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#eef4ff] text-[#00714d] rounded-full text-xs font-semibold mb-2">
-                <span>?</span>
+                <span>●</span>
                 <span>Active Session</span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-bold text-[#0d1c2d]">
@@ -73,21 +74,24 @@ export default async function DashboardPage() {
             </div>
 
             <Link
-              href="/"
+              href="/home"
               className="bg-[#006c49] hover:bg-[#005236] text-white text-xs sm:text-sm font-semibold px-5 py-3 rounded-xl transition-all shadow-xs inline-flex items-center justify-center gap-2 self-start sm:self-auto"
             >
-              <span>Explore Restaurants</span>
-              <span>?</span>
+              <span>Explore Stores & Catalogs</span>
+              <span>→</span>
             </Link>
           </div>
         </div>
+
+        {/* Become a Seller & Studio Management Component */}
+        <SellerPortal user={user} />
 
         {/* Profile & Info Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           {/* Card 1: Account Info */}
           <div className="bg-white border border-[#eef4ff] rounded-2xl p-6 shadow-xs">
             <div className="w-10 h-10 bg-[#eef4ff] text-[#006c49] rounded-xl flex items-center justify-center text-lg mb-4">
-              ??
+              👤
             </div>
             <h3 className="text-sm font-bold text-[#0d1c2d] mb-1">Account Details</h3>
             <p className="text-xs text-[#76777d] mb-4">Your verified profile information</p>
@@ -111,18 +115,18 @@ export default async function DashboardPage() {
           {/* Card 2: Saved Orders */}
           <div className="bg-white border border-[#eef4ff] rounded-2xl p-6 shadow-xs">
             <div className="w-10 h-10 bg-[#eef4ff] text-[#006c49] rounded-xl flex items-center justify-center text-lg mb-4">
-              ??
+              🛒
             </div>
             <h3 className="text-sm font-bold text-[#0d1c2d] mb-1">Recent Orders</h3>
-            <p className="text-xs text-[#76777d] mb-4">Track digital kitchen orders</p>
+            <p className="text-xs text-[#76777d] mb-4">Track your store orders & purchases</p>
 
             <div className="bg-[#f8f9ff] border border-[#eef4ff] rounded-xl p-4 text-center">
               <p className="text-xs text-[#76777d]">No active orders placed yet</p>
               <Link
-                href="/"
+                href="/home"
                 className="text-xs font-semibold text-[#006c49] hover:underline mt-1.5 inline-block"
               >
-                Browse menus now ?
+                Browse stores & catalogs →
               </Link>
             </div>
           </div>

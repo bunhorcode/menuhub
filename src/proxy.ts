@@ -31,6 +31,13 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
+  // Redirect root / to /home
+  if (pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/home'
+    return NextResponse.redirect(url)
+  }
+
   // Protect /dashboard — redirect unauthenticated users to /login
   if (!user && pathname.startsWith('/dashboard')) {
     const url = request.nextUrl.clone()
@@ -39,10 +46,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Redirect authenticated users away from /login and /signup
+  // Redirect authenticated users away from /login and /signup to /home
   if (user && (pathname === '/login' || pathname === '/signup')) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = '/home'
     return NextResponse.redirect(url)
   }
 

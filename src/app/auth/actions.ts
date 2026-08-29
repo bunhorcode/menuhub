@@ -20,10 +20,10 @@ export async function loginAction(
     return { error: error.message }
   }
 
-  // Redirect to the page the user originally wanted, or /dashboard
+  // Redirect to the page the user originally wanted, or /home
   const next = formData.get("next") as string | null
   revalidatePath("/", "layout")
-  redirect(next ?? "/dashboard")
+  redirect(next ?? "/home")
 }
 
 // -- Signup --------------------------------------------------------------------
@@ -54,7 +54,7 @@ export async function signupAction(
     email,
     password,
     options: {
-      emailRedirectTo: `${siteUrl}/auth/callback`,
+      emailRedirectTo: `${siteUrl}/auth/callback?next=/home`,
     },
   })
 
@@ -75,7 +75,7 @@ export async function signInWithOAuthAction(provider: "google" | "github") {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: {
-      redirectTo: `${siteUrl}/auth/callback`,
+      redirectTo: `${siteUrl}/auth/callback?next=/home`,
     },
   })
 
@@ -93,5 +93,5 @@ export async function logoutAction() {
   const supabase = await createClient()
   await supabase.auth.signOut()
   revalidatePath("/", "layout")
-  redirect("/")
+  redirect("/home")
 }
