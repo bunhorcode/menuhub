@@ -1,198 +1,9 @@
 import { createClient } from "./supabase/client"
 import { Store, StoreMenuItem, SellerProfile } from "./seller-types"
 
-export const DEFAULT_STORES: Store[] = [
-  {
-    id: "rest-1",
-    sellerId: "system",
-    name: "Urban Threads Fashion",
-    cuisine: "Streetwear, Casual & Outerwear",
-    priceRange: "$$",
-    rating: 4.9,
-    reviewsCount: 280,
-    badgeIcon: "👗",
-    image: "/images/bistro_delight.jpg",
-    category: "Clothing & Fashion",
-    description: "Premium contemporary fashion boutique offering curated everyday apparel and outerwear.",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "rest-2",
-    sellerId: "system",
-    name: "FreshMart Organic Groceries",
-    cuisine: "Fresh Produce, Bakery & Essentials",
-    priceRange: "$",
-    rating: 4.8,
-    reviewsCount: 420,
-    badgeIcon: "🛒",
-    image: "/images/berry_tart.jpg",
-    category: "Groceries & Supermarket",
-    description: "Farm-to-table organic vegetables, artisan pantry items, dairy, and daily essentials.",
-    createdAt: "2024-01-02",
-  },
-  {
-    id: "rest-3",
-    sellerId: "system",
-    name: "Cafe Nova Roasters",
-    cuisine: "Artisan Coffee, Pastries & Beans",
-    priceRange: "$",
-    rating: 4.9,
-    reviewsCount: 310,
-    badgeIcon: "☕",
-    image: "/images/matcha_latte.jpg",
-    category: "Cafes & Bakery",
-    description: "Specialty single-origin micro-lot coffees, pour-overs, and handcrafted French pastries.",
-    createdAt: "2024-01-03",
-  },
-  {
-    id: "rest-4",
-    sellerId: "system",
-    name: "PixelTech Gadgets",
-    cuisine: "Audio Gear, Accessories & Smart Devices",
-    priceRange: "$$$",
-    rating: 4.7,
-    reviewsCount: 195,
-    badgeIcon: "📱",
-    image: "/images/sushi_zen.jpg",
-    category: "Electronics & Gadgets",
-    description: "Cutting-edge consumer tech, premium wireless audio, charging docks, and smart accessories.",
-    createdAt: "2024-01-04",
-  },
-  {
-    id: "rest-5",
-    sellerId: "system",
-    name: "Bistro Delight",
-    cuisine: "Modern European Dining",
-    priceRange: "$$",
-    rating: 4.8,
-    reviewsCount: 150,
-    badgeIcon: "🍽️",
-    image: "/images/truffle_pasta.jpg",
-    category: "Restaurants & Dining",
-    description: "Classic modern European cuisine crafted with seasonal organic produce and fine pairings.",
-    createdAt: "2024-01-05",
-  },
-  {
-    id: "rest-6",
-    sellerId: "system",
-    name: "Glow & Flora Botanicals",
-    cuisine: "Skincare, Aromatherapy & Wellness",
-    priceRange: "$$",
-    rating: 4.9,
-    reviewsCount: 160,
-    badgeIcon: "💄",
-    image: "/images/wagyu_burger.jpg",
-    category: "Beauty & Cosmetics",
-    description: "Cruelty-free clean beauty essentials, organic botanical serums, and self-care collections.",
-    createdAt: "2024-01-06",
-  },
-]
+export const DEFAULT_STORES: Store[] = []
 
-export const DEFAULT_MENU_ITEMS: StoreMenuItem[] = [
-  // Urban Threads Fashion
-  {
-    id: "item-1",
-    storeId: "rest-1",
-    name: "Oversized Heavyweight Cotton Hoodie",
-    category: "Apparel & Tops",
-    price: 65.0,
-    description: "450 GSM French terry cotton hoodie with drop-shoulder silhouette and ribbed trim.",
-    image: "/images/bistro_delight.jpg",
-    tags: ["BESTSELLER", "100% COTTON"],
-    calories: "Sizes: S, M, L, XL",
-    prepTime: "Same-Day Dispatch",
-    available: true,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "item-2",
-    storeId: "rest-1",
-    name: "Vintage Wash Relaxed Denim",
-    category: "Bottoms & Pants",
-    price: 78.0,
-    description: "13oz Japanese selvedge denim in an authentic washed vintage indigo finish.",
-    image: "/images/wagyu_burger.jpg",
-    tags: ["NEW ARRIVAL", "PREMIUM"],
-    calories: "Sizes: 28 - 36",
-    prepTime: "Same-Day Dispatch",
-    available: true,
-    createdAt: "2024-01-01",
-  },
-  // FreshMart Organic Groceries
-  {
-    id: "item-3",
-    storeId: "rest-2",
-    name: "Seasonal Organic Berry & Fruit Box",
-    category: "Fresh Produce",
-    price: 24.5,
-    description: "Hand-picked fresh strawberries, blueberries, blackberries, and crisp organic Honeycrisp apples.",
-    image: "/images/berry_tart.jpg",
-    tags: ["100% ORGANIC", "FARM FRESH"],
-    calories: "1.5 kg box",
-    prepTime: "Fresh Delivery (1 hr)",
-    available: true,
-    createdAt: "2024-01-02",
-  },
-  {
-    id: "item-4",
-    storeId: "rest-2",
-    name: "Artisan Sourdough Country Loaf",
-    category: "Bakery & Bread",
-    price: 7.5,
-    description: "Naturally fermented 36-hour sourdough baked daily with organic stone-ground wheat flour.",
-    image: "/images/truffle_pasta.jpg",
-    tags: ["FRESHLY BAKED", "VEGAN"],
-    calories: "750g loaf",
-    prepTime: "Baked Morning",
-    available: true,
-    createdAt: "2024-01-02",
-  },
-  // Cafe Nova Roasters
-  {
-    id: "item-5",
-    storeId: "rest-3",
-    name: "Iced Ceremonial Matcha Latte",
-    category: "Artisan Drinks",
-    price: 8.5,
-    description: "Single-origin Uji ceremonial matcha whisked to order with organic oat milk and raw agave syrup.",
-    image: "/images/matcha_latte.jpg",
-    tags: ["VEGAN", "ORGANIC"],
-    calories: "16 oz",
-    prepTime: "5 min",
-    available: true,
-    createdAt: "2024-01-03",
-  },
-  // PixelTech Gadgets
-  {
-    id: "item-6",
-    storeId: "rest-4",
-    name: "Wireless ANC Pro Studio Earbuds",
-    category: "Audio Gear",
-    price: 129.0,
-    description: "Active noise cancellation, 32-hour battery life with Qi wireless charging case and Hi-Res audio codec.",
-    image: "/images/sushi_zen.jpg",
-    tags: ["BLUETOOTH 5.3", "IPX5 WATERPROOF"],
-    calories: "Matte Black",
-    prepTime: "Express Delivery",
-    available: true,
-    createdAt: "2024-01-04",
-  },
-  // Bistro Delight
-  {
-    id: "item-7",
-    storeId: "rest-5",
-    name: "Artisan Truffle Tagliatelle",
-    category: "Chef's Specials",
-    price: 26.5,
-    description: "Hand-crafted egg pasta tossed in cultured butter, parmigiano-reggiano, and shaved black truffles.",
-    image: "/images/truffle_pasta.jpg",
-    tags: ["SIGNATURE", "CHEF'S PICK"],
-    calories: "680 kcal",
-    prepTime: "15 min",
-    available: true,
-    createdAt: "2024-01-05",
-  },
-]
+export const DEFAULT_MENU_ITEMS: StoreMenuItem[] = []
 
 // Database mapping helpers
 interface DbSellerRow {
@@ -350,15 +161,13 @@ export async function getStores(sellerId?: string): Promise<Store[]> {
     }
     const { data, error } = await query
 
-    if (!error && data && data.length > 0) {
-      const dbStores = data.map(mapDbStore)
-      if (sellerId) return dbStores
-      return [...dbStores, ...DEFAULT_STORES]
+    if (!error && data) {
+      return data.map(mapDbStore)
     }
   } catch (e) {
     console.error("Supabase getStores exception:", e)
   }
-  return sellerId ? [] : DEFAULT_STORES
+  return []
 }
 
 export async function saveStore(store: Omit<Store, "id" | "createdAt"> & { id?: string }): Promise<Store | null> {
@@ -417,19 +226,13 @@ export async function getMenuItems(storeId?: string): Promise<StoreMenuItem[]> {
     }
     const { data, error } = await query
 
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map(mapDbMenuItem)
     }
   } catch (e) {
     console.error("Supabase getMenuItems exception:", e)
   }
-
-  // Fallback to sample items for default store IDs
-  if (storeId) {
-    const defaultMatches = DEFAULT_MENU_ITEMS.filter((i) => i.storeId === storeId)
-    return defaultMatches.length > 0 ? defaultMatches : DEFAULT_MENU_ITEMS
-  }
-  return DEFAULT_MENU_ITEMS
+  return []
 }
 
 export async function saveMenuItem(item: Omit<StoreMenuItem, "id" | "createdAt"> & { id?: string }): Promise<StoreMenuItem | null> {

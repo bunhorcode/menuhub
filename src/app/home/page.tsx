@@ -270,50 +270,68 @@ export default function MenuHubScreen() {
 
           {/* Store Cards Grid — Compact Taobao-style */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3 mb-12">
-            {filteredRestaurants.map((rest) => (
-              <div
-                key={rest.id}
-                onClick={() => setActiveRestaurant(rest)}
-                className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer group"
-              >
-                {/* Card Image - Square Frame with Full Image */}
-                <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
-                  <Image
-                    src={rest.image}
-                    alt={rest.name}
-                    fill
-                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                    className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
-                  />
-
-                  {/* Category Badge */}
-                  <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md flex items-center gap-1 text-[10px] font-bold shadow-xs">
-                    <span>{rest.badgeIcon}</span>
-                    <span className="text-[#0d1c2d] hidden sm:inline">{rest.category}</span>
-                  </div>
-
-                  {/* Rating */}
-                  <div className="absolute bottom-1.5 right-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md text-[10px] font-bold text-[#0d1c2d] shadow-xs flex items-center gap-0.5">
-                    <span className="text-[#006c49]">★</span>
-                    <span>{rest.rating}</span>
-                  </div>
-                </div>
-
-                {/* Card Info */}
-                <div className="p-2.5 sm:p-3">
-                  <h3 className="text-xs sm:text-sm font-bold text-[#0d1c2d] leading-tight line-clamp-1">
-                    {rest.name}
-                  </h3>
-                  <p className="text-[10px] sm:text-[11px] text-[#76777d] mt-0.5 line-clamp-1">
-                    {rest.cuisine} · {rest.priceRange}
-                  </p>
-                  <div className="mt-2 bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#00714d] font-semibold text-[10px] sm:text-[11px] py-1.5 rounded-lg flex items-center justify-center gap-1 transition-all">
-                    <span>View Store</span>
-                    <span>→</span>
-                  </div>
-                </div>
+            {filteredRestaurants.length === 0 ? (
+              <div className="col-span-full text-center py-16 px-4 bg-white rounded-2xl border border-[#eef4ff] shadow-xs">
+                <span className="text-4xl inline-block mb-2">🏬</span>
+                <h3 className="text-base font-bold text-[#0d1c2d]">No Stores Available Yet</h3>
+                <p className="text-xs text-[#76777d] mt-1 max-w-sm mx-auto">
+                  {searchQuery || selectedCategoryPill !== "All"
+                    ? "No stores match your current filters. Try changing your search keywords."
+                    : "Become a seller and open your digital store & catalog today!"}
+                </p>
+                <Link
+                  href="/dashboard"
+                  className="inline-block mt-4 bg-[#006c49] hover:bg-[#005236] text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-xs"
+                >
+                  + Open Store in Seller Studio
+                </Link>
               </div>
-            ))}
+            ) : (
+              filteredRestaurants.map((rest) => (
+                <div
+                  key={rest.id}
+                  onClick={() => setActiveRestaurant(rest)}
+                  className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer group"
+                >
+                  {/* Card Image - Square Frame with Full Image */}
+                  <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
+                    <Image
+                      src={rest.image}
+                      alt={rest.name}
+                      fill
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                      className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
+                    />
+
+                    {/* Category Badge */}
+                    <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md flex items-center gap-1 text-[10px] font-bold shadow-xs">
+                      <span>{rest.badgeIcon}</span>
+                      <span className="text-[#0d1c2d] hidden sm:inline">{rest.category}</span>
+                    </div>
+
+                    {/* Rating */}
+                    <div className="absolute bottom-1.5 right-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md text-[10px] font-bold text-[#0d1c2d] shadow-xs flex items-center gap-0.5">
+                      <span className="text-[#006c49]">★</span>
+                      <span>{rest.rating}</span>
+                    </div>
+                  </div>
+
+                  {/* Card Info */}
+                  <div className="p-2.5 sm:p-3">
+                    <h3 className="text-xs sm:text-sm font-bold text-[#0d1c2d] leading-tight line-clamp-1">
+                      {rest.name}
+                    </h3>
+                    <p className="text-[10px] sm:text-[11px] text-[#76777d] mt-0.5 line-clamp-1">
+                      {rest.cuisine} · {rest.priceRange}
+                    </p>
+                    <div className="mt-2 bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#00714d] font-semibold text-[10px] sm:text-[11px] py-1.5 rounded-lg flex items-center justify-center gap-1 transition-all">
+                      <span>View Store</span>
+                      <span>→</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </main>
       ) : (
