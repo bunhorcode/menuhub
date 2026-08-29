@@ -1,12 +1,52 @@
-name: menuhub-workflow
+name: MenuHub CI
 
-#To get a trigger on every push on this repository in any branch
-on: push
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+# Cancel any in-progress run on the same branch to avoid wasted minutes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # CI: Lint → Type-check → Build
+  # Runs on every push and every PR against main
+  # ─────────────────────────────────────────────────────────────────────────────
+  ci:
+    name: 🔍 Lint · Type-check · Build
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Run a command
-        run: echo "Hello, world"
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ESLint — matches your `npm run lint` script
+      - name: Run ESLint
+        run: npm run lint
+
+      # TypeScript strict type-check (no emit, just validation)
+      - name: TypeScript type-check
+        run: npx tsc --noEmit
+
+      # Verify the Next.js app actually compiles (catches build-time errors early)
+      - name: Next.js build check
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          NEXT_TELEMETRY_DISABLED: 1
+        run: npm run build
+
