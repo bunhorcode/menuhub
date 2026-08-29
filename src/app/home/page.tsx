@@ -268,57 +268,48 @@ export default function MenuHubScreen() {
             </div>
           </div>
 
-          {/* Store Cards Grid (3 Columns on Desktop) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+          {/* Store Cards Grid — Compact Taobao-style */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3 mb-12">
             {filteredRestaurants.map((rest) => (
               <div
                 key={rest.id}
-                className="bg-white rounded-2xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between"
+                onClick={() => setActiveRestaurant(rest)}
+                className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer group"
               >
-                <div>
-                  {/* Card Image Header with Badges */}
-                  <div className="relative h-48 sm:h-52 w-full bg-[#eef4ff] overflow-hidden">
-                    <Image
-                      src={rest.image}
-                      alt={rest.name}
-                      fill
-                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                      className="object-cover"
-                    />
+                {/* Card Image */}
+                <div className="relative aspect-[4/3] w-full bg-[#eef4ff] overflow-hidden">
+                  <Image
+                    src={rest.image}
+                    alt={rest.name}
+                    fill
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
 
-                    {/* Top-Left Badge Icon */}
-                    <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-md px-2.5 py-1 rounded-xl flex items-center gap-1.5 text-xs font-bold shadow-xs border border-white/40">
-                      <span>{rest.badgeIcon}</span>
-                      <span className="text-[11px] text-[#0d1c2d]">{rest.category}</span>
-                    </div>
-
-                    {/* Bottom-Right Rating Pill */}
-                    <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-[#0d1c2d] shadow-xs flex items-center gap-1 border border-white/40">
-                      <span className="text-[#006c49]">★</span>
-                      <span>{rest.rating}</span>
-                      <span className="text-[#76777d] font-normal">
-                        ({rest.reviewsCount}+)
-                      </span>
-                    </div>
+                  {/* Category Badge */}
+                  <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md flex items-center gap-1 text-[10px] font-bold shadow-xs">
+                    <span>{rest.badgeIcon}</span>
+                    <span className="text-[#0d1c2d] hidden sm:inline">{rest.category}</span>
                   </div>
 
-                  {/* Card Content */}
-                  <div className="p-5">
-                    <h3 className="text-lg font-bold text-[#0d1c2d] tracking-tight">
-                      {rest.name}
-                    </h3>
-                    <p className="text-xs text-[#76777d] mt-1 font-medium">
-                      {rest.cuisine} • {rest.priceRange}
-                    </p>
+                  {/* Rating */}
+                  <div className="absolute bottom-1.5 right-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md text-[10px] font-bold text-[#0d1c2d] shadow-xs flex items-center gap-0.5">
+                    <span className="text-[#006c49]">★</span>
+                    <span>{rest.rating}</span>
+                  </div>
+                </div>
 
-                    {/* Action Button: Explore Store & Catalog → */}
-                    <button
-                      onClick={() => setActiveRestaurant(rest)}
-                      className="w-full mt-4 bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#00714d] font-semibold text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 transition-all"
-                    >
-                      <span>Explore Catalog & Menu</span>
-                      <span className="text-sm">→</span>
-                    </button>
+                {/* Card Info */}
+                <div className="p-2.5 sm:p-3">
+                  <h3 className="text-xs sm:text-sm font-bold text-[#0d1c2d] leading-tight line-clamp-1">
+                    {rest.name}
+                  </h3>
+                  <p className="text-[10px] sm:text-[11px] text-[#76777d] mt-0.5 line-clamp-1">
+                    {rest.cuisine} · {rest.priceRange}
+                  </p>
+                  <div className="mt-2 bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#00714d] font-semibold text-[10px] sm:text-[11px] py-1.5 rounded-lg flex items-center justify-center gap-1 transition-all">
+                    <span>View Store</span>
+                    <span>→</span>
                   </div>
                 </div>
               </div>
@@ -327,45 +318,56 @@ export default function MenuHubScreen() {
         </main>
       ) : (
         /* Store View when Clicking Explore Store */
-        <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-8">
+        <main className="flex-1 max-w-[1200px] w-full mx-auto px-3 sm:px-6 py-5 sm:py-8">
           {/* Store Header Banner */}
-          <div className="bg-white border border-[#eef4ff] rounded-2xl p-6 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="bg-[#006c49] text-white text-xs font-bold px-2.5 py-0.5 rounded-full">
-                  ★ {activeRestaurant.rating} ({activeRestaurant.reviewsCount}+)
-                </span>
-                <span className="text-xs font-semibold text-[#00714d] bg-[#eef4ff] px-2 py-0.5 rounded-full">
-                  {activeRestaurant.badgeIcon} {activeRestaurant.category}
-                </span>
-                <span className="text-xs font-medium text-[#76777d]">
-                  {activeRestaurant.cuisine} • {activeRestaurant.priceRange}
-                </span>
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-[#0d1c2d] mt-2">
-                {activeRestaurant.name}
-              </h2>
-              <p className="text-sm text-[#76777d] mt-1">
-                {activeRestaurant.description || "Digital Catalog & Live Ordering"}
-              </p>
-            </div>
-
+          <div className="bg-white border border-[#eef4ff] rounded-2xl p-4 sm:p-6 mb-6 shadow-xs">
+            {/* Back Button */}
             <button
-              onClick={() => setIsCartOpen(true)}
-              className="bg-[#006c49] hover:bg-[#005236] text-white px-5 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 self-start md:self-auto shadow-xs"
+              onClick={() => setActiveRestaurant(null)}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#006c49] hover:text-[#005236] bg-[#eef4ff] hover:bg-[#dbe9ff] px-3 py-1.5 rounded-lg mb-3 transition-all"
             >
-              <span>🛒 View Cart ({totalItemCount})</span>
+              <span>←</span>
+              <span>Back to All Stores</span>
             </button>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="bg-[#006c49] text-white text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full">
+                    ★ {activeRestaurant.rating} ({activeRestaurant.reviewsCount}+)
+                  </span>
+                  <span className="text-[10px] sm:text-xs font-semibold text-[#00714d] bg-[#eef4ff] px-2 py-0.5 rounded-full">
+                    {activeRestaurant.badgeIcon} {activeRestaurant.category}
+                  </span>
+                  <span className="text-[10px] sm:text-xs font-medium text-[#76777d]">
+                    {activeRestaurant.cuisine} · {activeRestaurant.priceRange}
+                  </span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-bold text-[#0d1c2d] mt-1.5">
+                  {activeRestaurant.name}
+                </h2>
+                <p className="text-xs text-[#76777d] mt-0.5">
+                  {activeRestaurant.description || "Digital Catalog & Live Ordering"}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setIsCartOpen(true)}
+                className="bg-[#006c49] hover:bg-[#005236] text-white px-4 py-2 rounded-xl font-semibold text-xs sm:text-sm flex items-center gap-2 self-start sm:self-auto shadow-xs shrink-0"
+              >
+                <span>🛒 View Bag ({totalItemCount})</span>
+              </button>
+            </div>
           </div>
 
-          {/* Products / Items Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+          {/* Products / Items Grid — Compact Taobao-style 2-column mobile */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3 mb-12">
             {storeDishes.length === 0 ? (
               <div className="col-span-full text-center py-12 bg-white rounded-2xl border border-[#eef4ff] shadow-xs">
-                <p className="text-sm text-[#76777d]">No items listed in this store catalog yet.</p>
+                <p className="text-xs sm:text-sm text-[#76777d]">No items listed in this store catalog yet.</p>
                 <Link
                   href="/dashboard"
-                  className="inline-block mt-3 text-xs font-semibold text-[#006c49] hover:underline"
+                  className="inline-block mt-2 text-xs font-semibold text-[#006c49] hover:underline"
                 >
                   Manage store items in Seller Studio →
                 </Link>
@@ -374,47 +376,70 @@ export default function MenuHubScreen() {
               storeDishes.map((item) => (
                 <div
                   key={item.id}
-                  className="bg-white rounded-2xl border border-[#eef4ff] overflow-hidden flex flex-col justify-between shadow-xs"
+                  className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between group"
                 >
                   <div>
-                    <div className="relative h-48 w-full bg-[#eef4ff] overflow-hidden">
+                    {/* Compact Image */}
+                    <div className="relative aspect-[4/3] w-full bg-[#eef4ff] overflow-hidden">
                       <Image
                         src={item.image}
                         alt={item.name}
                         fill
-                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                        className="object-cover"
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
                       />
+
+                      {/* Out of Stock Overlay */}
                       {!item.available && (
                         <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center">
-                          <span className="bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full">
+                          <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                             Sold Out
                           </span>
                         </div>
                       )}
+
+                      {/* Tag / Category Badge */}
+                      {item.category && (
+                        <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md text-[9px] font-bold text-[#0d1c2d] shadow-xs truncate max-w-[80%]">
+                          {item.category}
+                        </div>
+                      )}
                     </div>
-                    <div className="p-5">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-bold text-base text-[#0d1c2d]">
-                          {item.name}
-                        </h3>
-                        <span className="font-bold text-base text-[#006c49]">
+
+                    {/* Content Details */}
+                    <div className="p-2.5 sm:p-3">
+                      <h3 className="font-bold text-xs sm:text-sm text-[#0d1c2d] leading-tight line-clamp-1">
+                        {item.name}
+                      </h3>
+
+                      {item.description && (
+                        <p className="text-[10px] text-[#76777d] mt-1 line-clamp-1 leading-tight">
+                          {item.description}
+                        </p>
+                      )}
+
+                      {/* Price & Variant Specs */}
+                      <div className="mt-1.5 flex items-baseline justify-between gap-1 flex-wrap">
+                        <span className="font-bold text-sm sm:text-base text-[#006c49]">
                           ${item.price.toFixed(2)}
                         </span>
+                        {item.calories && (
+                          <span className="text-[9px] sm:text-[10px] text-[#76777d] bg-[#f8f9ff] px-1.5 py-0.5 rounded border border-[#eef4ff] truncate max-w-[90px]">
+                            {item.calories}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-xs text-[#76777d] mt-2 leading-relaxed line-clamp-2">
-                        {item.description}
-                      </p>
                     </div>
                   </div>
 
-                  <div className="p-5 pt-0">
+                  {/* Add to Bag Button */}
+                  <div className="p-2.5 sm:p-3 pt-0">
                     <button
                       disabled={!item.available}
                       onClick={() => handleAddToCart(item)}
-                      className="w-full bg-[#0d1c2d] hover:bg-[#131b2e] disabled:opacity-50 text-white text-xs font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1"
+                      className="w-full bg-[#0d1c2d] hover:bg-[#131b2e] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 sm:py-2 rounded-lg flex items-center justify-center gap-1 transition-all"
                     >
-                      {item.available ? "+ Add to Bag" : "Currently Unavailable"}
+                      <span>{item.available ? "+ Add to Bag" : "Sold Out"}</span>
                     </button>
                   </div>
                 </div>
