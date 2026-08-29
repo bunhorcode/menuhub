@@ -1,0 +1,15 @@
+services:
+  menuhub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: menuhub:latest
+    container_name: menuhub-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_SUPABASE_URL=https://amzadvwqpbxwlaskinbv.supabase.co
+      - NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_tOxNCAfQQ9kDzj0-YJVaxQ_4Y1BfpLb
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_tOxNCAfQQ9kDzj0-YJVaxQ_4Y1BfpLb
+    restart: always
