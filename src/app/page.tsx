@@ -2,6 +2,8 @@
 
 import { useState, useMemo, useEffect } from "react"
 import Image from "next/image"
+import Link from "next/link"
+import { type User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 
 // Interfaces update
@@ -176,18 +178,26 @@ export default function MenuHubScreen() {
   const [activeRestaurant, setActiveRestaurant] = useState<Restaurant | null>(null)
   const [cart, setCart] = useState<CartItem[]>([])
   const [isCartOpen, setIsCartOpen] = useState(false)
-  const [authModal, setAuthModal] = useState<"login" | "signup" | null>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [supabaseStatus, setSupabaseStatus] = useState<string>("Checking...")
 
-  // Verify Supabase integration
-  // setState is called inside an async function (not synchronously in the
-  // effect body) to satisfy the react-hooks/set-state-in-effect ESLint rule.
+  // Verify Supabase integration & load authenticated user
   useEffect(() => {
     const checkConnection = async () => {
       try {
         const supabase = createClient()
         if (supabase) {
           setSupabaseStatus("Supabase Connected")
+          const { data: { user: currentUser } } = await supabase.auth.getUser()
+          setUser(currentUser)
+
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null)
+          })
+
+          return () => {
+            subscription.unsubscribe()
+          }
         }
       } catch {
         setSupabaseStatus("Local Mode")
@@ -233,6 +243,12 @@ export default function MenuHubScreen() {
     })
   }
 
+  const handleSignOut = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    setUser(null)
+  }
+
   const totalItemCount = cart.reduce((sum, ci) => sum + ci.quantity, 0)
   const subtotal = cart.reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0)
 
@@ -252,7 +268,7 @@ export default function MenuHubScreen() {
           </div>
 
           {/* Right Navigation Actions */}
-          <div className="flex items-center gap-4 sm:gap-6">
+          <div className="flex items-center gap-3 sm:gap-4">
             {activeRestaurant && (
               <button
                 onClick={() => setActiveRestaurant(null)}
@@ -262,19 +278,39 @@ export default function MenuHubScreen() {
               </button>
             )}
 
-            <button
-              onClick={() => setAuthModal("login")}
-              className="text-xs sm:text-sm font-medium text-[#0d1c2d] hover:text-[#006c49] transition-colors"
-            >
-              Log In
-            </button>
+            {user ? (
+              <div className="flex items-center gap-2 sm:gap-3">
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#0d1c2d] bg-[#eef4ff] hover:bg-[#dbe9ff] px-3 py-1.5 rounded-xl border border-[#ccdbf2] transition-all"
+                >
+                  <span>👤</span>
+                  <span className="max-w-[100px] sm:max-w-[150px] truncate">{user.email?.split("@")[0]}</span>
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  className="bg-[#fee2e2] hover:bg-[#fecaca] text-[#b91c1c] text-xs sm:text-sm font-semibold px-3 py-1.5 rounded-xl transition-all"
+                >
+                  Log Out
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 sm:gap-4">
+                <Link
+                  href="/login"
+                  className="text-xs sm:text-sm font-medium text-[#0d1c2d] hover:text-[#006c49] transition-colors"
+                >
+                  Log In
+                </Link>
 
-            <button
-              onClick={() => setAuthModal("signup")}
-              className="bg-[#006c49] hover:bg-[#005236] text-white text-xs sm:text-sm font-semibold px-4.5 py-2 rounded-lg transition-all shadow-xs"
-            >
-              Sign Up
-            </button>
+                <Link
+                  href="/signup"
+                  className="bg-[#006c49] hover:bg-[#005236] text-white text-xs sm:text-sm font-semibold px-4.5 py-2 rounded-xl transition-all shadow-xs"
+                >
+                  Sign Up
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -545,43 +581,7 @@ export default function MenuHubScreen() {
         </div>
       )}
 
-      {/* Auth Modal (Log In / Sign Up) */}
-      {authModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-sm w-full shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-[#0d1c2d]">
-                {authModal === "login" ? "Log In to MenuHub" : "Create MenuHub Account"}
-              </h3>
-              <button
-                onClick={() => setAuthModal(null)}
-                className="text-sm font-bold text-[#76777d]"
-              >
-                ✕
-              </button>
-            </div>
 
-            <div className="space-y-3">
-              <input
-                type="email"
-                placeholder="Email address"
-                className="w-full h-11 px-4 border border-[#c6c6cd] rounded-xl text-sm"
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                className="w-full h-11 px-4 border border-[#c6c6cd] rounded-xl text-sm"
-              />
-              <button
-                onClick={() => setAuthModal(null)}
-                className="w-full bg-[#006c49] hover:bg-[#005236] text-white py-3 rounded-xl font-semibold text-sm mt-2"
-              >
-                {authModal === "login" ? "Log In" : "Sign Up"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 4. Footer Section (Matching screenshot exactly) */}
       <footer className="bg-[#eef4ff] border-t border-[#dbe9ff] mt-auto">
