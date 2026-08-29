@@ -397,13 +397,6 @@ export default function MenuHubScreen() {
                           </span>
                         </div>
                       )}
-
-                      {/* Tag / Category Badge */}
-                      {item.category && (
-                        <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md text-[9px] font-bold text-[#0d1c2d] shadow-xs truncate max-w-[80%]">
-                          {item.category}
-                        </div>
-                      )}
                     </div>
 
                     {/* Content Details */}
