@@ -1,0 +1,4 @@
+name: menuhub-workflow
+
+#To get a trigger on every push on this repository in any branch
+on: push
