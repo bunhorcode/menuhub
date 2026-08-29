@@ -37,16 +37,18 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
-      # TypeScript strict type-check (no emit, just validation)
-      - name: TypeScript type-check
-        run: npx tsc --noEmit
-
-      # Verify the Next.js app actually compiles (catches build-time errors early)
-      - name: Next.js build check
+      # Build first — this generates .next/types/**/*.ts which tsconfig.json
+      # includes. Running tsc BEFORE build causes exit code 1 because those
+      # generated type files don't exist yet on a fresh CI runner.
+      - name: Next.js build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
           NEXT_TELEMETRY_DISABLED: 1
         run: npm run build
+
+      # TypeScript strict type-check — runs AFTER build so .next/types/** exist
+      - name: TypeScript type-check
+        run: npx tsc --noEmit
 
