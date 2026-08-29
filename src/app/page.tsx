@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
 
 // Interfaces
@@ -179,15 +180,20 @@ export default function MenuHubScreen() {
   const [supabaseStatus, setSupabaseStatus] = useState<string>("Checking...")
 
   // Verify Supabase integration
+  // setState is called inside an async function (not synchronously in the
+  // effect body) to satisfy the react-hooks/set-state-in-effect ESLint rule.
   useEffect(() => {
-    try {
-      const supabase = createClient()
-      if (supabase) {
-        setSupabaseStatus("Supabase Connected")
+    const checkConnection = async () => {
+      try {
+        const supabase = createClient()
+        if (supabase) {
+          setSupabaseStatus("Supabase Connected")
+        }
+      } catch {
+        setSupabaseStatus("Local Mode")
       }
-    } catch {
-      setSupabaseStatus("Local Mode")
     }
+    checkConnection()
   }, [])
 
   // Filter restaurants by search and category pill
@@ -340,10 +346,12 @@ export default function MenuHubScreen() {
                 <div>
                   {/* Card Image Header with Badges */}
                   <div className="relative h-48 sm:h-52 w-full bg-[#eef4ff] overflow-hidden">
-                    <img
+                    <Image
                       src={rest.image}
                       alt={rest.name}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      className="object-cover"
                     />
 
                     {/* Top-Left Badge Icon */}
@@ -422,11 +430,13 @@ export default function MenuHubScreen() {
                 className="bg-white rounded-2xl border border-[#eef4ff] overflow-hidden flex flex-col justify-between shadow-xs"
               >
                 <div>
-                  <div className="h-48 w-full bg-[#eef4ff] overflow-hidden">
-                    <img
+                  <div className="relative h-48 w-full bg-[#eef4ff] overflow-hidden">
+                    <Image
                       src={item.image}
                       alt={item.name}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      className="object-cover"
                     />
                   </div>
                   <div className="p-5">
