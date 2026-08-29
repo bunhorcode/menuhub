@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // Only use standalone output for Docker containers; omit on Vercel to prevent NFT tracing errors
+  ...(process.env.BUILD_STANDALONE === "true" ? { output: "standalone" } : {}),
   images: {
     remotePatterns: [
       {
@@ -17,4 +18,5 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
 
