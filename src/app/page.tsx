@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react"
 import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
 
-// Interfaces
+// Interfaces update
 interface Restaurant {
   id: string
   name: string
@@ -306,7 +306,7 @@ export default function MenuHubScreen() {
               </div>
 
               <button
-                onClick={() => {}}
+                onClick={() => { }}
                 className="bg-[#006c49] hover:bg-[#005236] text-white h-12 px-6 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-xs transition-all"
               >
                 <span>🔍</span>
@@ -322,11 +322,10 @@ export default function MenuHubScreen() {
                   <button
                     key={pill.name}
                     onClick={() => setSelectedCategoryPill(pill.name)}
-                    className={`px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all ${
-                      isActive
+                    className={`px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all ${isActive
                         ? "bg-[#006c49] text-white shadow-xs"
                         : "bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#0d1c2d]"
-                    }`}
+                      }`}
                   >
                     <span>{pill.icon}</span>
                     <span>{pill.name}</span>
