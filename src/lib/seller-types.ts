@@ -81,6 +81,8 @@ export interface StoreMenuItem {
   calories?: string // Product specifications / size / weight / calories
   prepTime?: string // Fulfillment time / delivery / prep time
   available: boolean
+  stock?: number // Stock inventory count for simple items (e.g. 50 units, 0 = Sold Out)
+  costPrice?: number // Wholesale / unit cost price (e.g. 15.00)
   barcode?: string // Barcode / SKU / UPC code for inventory tracking & POS scanning
   options?: OptionGroup[] // Dynamic variant groups (Color, Size, Sugar Level, etc.)
   variants?: VariantCombination[] // Multi-attribute combination matrix (e.g. Red/S = 2, Red/XL = 0)

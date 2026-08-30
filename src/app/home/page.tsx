@@ -319,6 +319,31 @@ export default function MenuHubScreen() {
     }
   }
 
+  // Helper to compute overall stock health for an item
+  const getItemStockSummary = (
+    item: StoreMenuItem
+  ): { isSoldOut: boolean; isLowStock: boolean; stockCount: number } => {
+    if (!item.available) {
+      return { isSoldOut: true, isLowStock: false, stockCount: 0 }
+    }
+    if (item.variants && item.variants.length > 0) {
+      const total = item.variants.reduce((sum, v) => sum + (v.stock || 0), 0)
+      return {
+        isSoldOut: total <= 0,
+        isLowStock: total > 0 && total <= 5,
+        stockCount: total,
+      }
+    }
+    if (item.stock !== undefined) {
+      return {
+        isSoldOut: item.stock <= 0,
+        isLowStock: item.stock > 0 && item.stock <= 5,
+        stockCount: item.stock,
+      }
+    }
+    return { isSoldOut: false, isLowStock: false, stockCount: 50 }
+  }
+
   // Helper to check if an option value is out of stock (multi-attribute combination aware)
   const checkOptionOutOfStock = (
     item: StoreMenuItem,
@@ -814,96 +839,110 @@ export default function MenuHubScreen() {
                 </Link>
               </div>
             ) : (
-              storeDishes.map((item, idx) => (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between group"
-                >
-                  <div>
-                    {/* Compact Square Image Frame - Full Image */}
-                    <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
-                      <Image
-                        src={item.image}
-                        alt={item.name}
-                        fill
-                        priority={idx < 4}
-                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                        className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
-                      />
+              storeDishes.map((item, idx) => {
+                const stockSummary = getItemStockSummary(item)
 
-                      {/* Out of Stock Overlay */}
-                      {!item.available && (
-                        <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center">
-                          <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                            Sold Out
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => !stockSummary.isSoldOut && handleProductClick(item)}
+                    className={`bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between group ${
+                      stockSummary.isSoldOut ? "opacity-75 cursor-not-allowed" : "cursor-pointer"
+                    }`}
+                  >
+                    <div>
+                      {/* Compact Square Image Frame - Full Image */}
+                      <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
+                        <Image
+                          src={item.image}
+                          alt={item.name}
+                          fill
+                          priority={idx < 4}
+                          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                          className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
+                        />
 
-                    {/* Content Details */}
-                    <div className="p-2.5 sm:p-3">
-                      <h3 className="font-bold text-xs sm:text-sm text-[#0d1c2d] leading-tight line-clamp-1">
-                        {item.name}
-                      </h3>
+                        {/* Out of Stock Overlay */}
+                        {stockSummary.isSoldOut && (
+                          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center">
+                            <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                              Sold Out
+                            </span>
+                          </div>
+                        )}
 
-                      {item.description && (
-                        <p className="text-[10px] text-[#76777d] mt-1 line-clamp-1 leading-tight">
-                          {item.description}
-                        </p>
-                      )}
-
-                      {/* Price & Variant Specs */}
-                      <div className="mt-1.5 flex items-baseline justify-between gap-1 flex-wrap">
-                        <span className="font-bold text-sm sm:text-base text-[#006c49]">
-                          {item.variants && item.variants.length > 0 ? (
-                            (() => {
-                              const prices = item.variants
-                                .map((v) =>
-                                  v.sellPrice !== undefined && v.sellPrice > 0
-                                    ? v.sellPrice
-                                    : item.price + (v.priceAdjustment || 0)
-                                )
-                                .filter((p) => p > 0)
-                              if (prices.length === 0) return `$${item.price.toFixed(2)}`
-                              const min = Math.min(...prices)
-                              const max = Math.max(...prices)
-                              return min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`
-                            })()
-                          ) : (
-                            `$${item.price.toFixed(2)}`
-                          )}
-                        </span>
-                        {item.calories && (
-                          <span className="text-[9px] sm:text-[10px] text-[#76777d] bg-[#f8f9ff] px-1.5 py-0.5 rounded border border-[#eef4ff] truncate max-w-[90px]">
-                            {item.calories}
-                          </span>
+                        {/* Low Stock Urgent Badge */}
+                        {!stockSummary.isSoldOut && stockSummary.isLowStock && (
+                          <div className="absolute top-2 right-2 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-xs animate-pulse">
+                            Only {stockSummary.stockCount} left!
+                          </div>
                         )}
                       </div>
+
+                      {/* Content Details */}
+                      <div className="p-2.5 sm:p-3">
+                        <h3 className="font-bold text-xs sm:text-sm text-[#0d1c2d] leading-tight line-clamp-1">
+                          {item.name}
+                        </h3>
+
+                        {item.description && (
+                          <p className="text-[10px] text-[#76777d] mt-1 line-clamp-1 leading-tight">
+                            {item.description}
+                          </p>
+                        )}
+
+                        {/* Price & Variant Specs */}
+                        <div className="mt-1.5 flex items-baseline justify-between gap-1 flex-wrap">
+                          <span className="font-bold text-sm sm:text-base text-[#006c49]">
+                            {item.variants && item.variants.length > 0 ? (
+                              (() => {
+                                const prices = item.variants
+                                  .map((v) =>
+                                    v.sellPrice !== undefined && v.sellPrice > 0
+                                      ? v.sellPrice
+                                      : item.price + (v.priceAdjustment || 0)
+                                  )
+                                  .filter((p) => p > 0)
+                                if (prices.length === 0) return `$${item.price.toFixed(2)}`
+                                const min = Math.min(...prices)
+                                const max = Math.max(...prices)
+                                return min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`
+                              })()
+                            ) : (
+                              `$${item.price.toFixed(2)}`
+                            )}
+                          </span>
+                          {item.calories && (
+                            <span className="text-[9px] sm:text-[10px] text-[#76777d] bg-[#f8f9ff] px-1.5 py-0.5 rounded border border-[#eef4ff] truncate max-w-[90px]">
+                              {item.calories}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Add to Bag Button */}
+                    <div className="p-2.5 sm:p-3 pt-0">
+                      <button
+                        disabled={stockSummary.isSoldOut}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleProductClick(item)
+                        }}
+                        className="w-full bg-[#0d1c2d] hover:bg-[#131b2e] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 sm:py-2 rounded-lg flex items-center justify-center gap-1 transition-all"
+                      >
+                        <span>
+                          {stockSummary.isSoldOut
+                            ? "Sold Out"
+                            : item.options && item.options.length > 0
+                            ? "✨ Select Options"
+                            : "+ Add to Bag"}
+                        </span>
+                      </button>
                     </div>
                   </div>
-
-                  {/* Add to Bag Button */}
-                  <div className="p-2.5 sm:p-3 pt-0">
-                    <button
-                      disabled={!item.available}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleProductClick(item)
-                      }}
-                      className="w-full bg-[#0d1c2d] hover:bg-[#131b2e] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 sm:py-2 rounded-lg flex items-center justify-center gap-1 transition-all"
-                    >
-                      <span>
-                        {!item.available
-                          ? "Sold Out"
-                          : item.options && item.options.length > 0
-                          ? "✨ Select Options"
-                          : "+ Add to Bag"}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </main>

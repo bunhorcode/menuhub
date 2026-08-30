@@ -47,8 +47,10 @@ interface DbMenuItemRow {
   calories: string | null
   prep_time: string | null
   available: boolean
+  stock?: number | null
+  cost_price?: number | null
   barcode?: string | null
-  options: OptionGroup[] | null
+  options: OptionGroup[] | { groups?: OptionGroup[]; variants?: VariantCombination[]; stock?: number; costPrice?: number } | null
   created_at: string
 }
 
@@ -86,9 +88,11 @@ function mapDbStore(row: DbStoreRow): Store {
 }
 
 function mapDbMenuItem(row: DbMenuItemRow): StoreMenuItem {
-  // Parse options & variants matrix — handle both array and { groups, variants } object
+  // Parse options & variants matrix & stock metadata — handle both array and { groups, variants, stock, costPrice } object
   let parsedOptions: OptionGroup[] | undefined = undefined
   let parsedVariants: VariantCombination[] | undefined = undefined
+  let parsedStock: number | undefined = typeof row.stock === "number" ? row.stock : undefined
+  let parsedCostPrice: number | undefined = typeof row.cost_price === "number" ? row.cost_price : undefined
 
   if (row.options) {
     try {
@@ -98,6 +102,12 @@ function mapDbMenuItem(row: DbMenuItemRow): StoreMenuItem {
       } else if (raw && typeof raw === "object") {
         parsedOptions = Array.isArray(raw.groups) && raw.groups.length > 0 ? raw.groups : undefined
         parsedVariants = Array.isArray(raw.variants) && raw.variants.length > 0 ? raw.variants : undefined
+        if (typeof raw.stock === "number" && parsedStock === undefined) {
+          parsedStock = raw.stock
+        }
+        if (typeof raw.costPrice === "number" && parsedCostPrice === undefined) {
+          parsedCostPrice = raw.costPrice
+        }
       }
     } catch {
       parsedOptions = undefined
@@ -117,6 +127,8 @@ function mapDbMenuItem(row: DbMenuItemRow): StoreMenuItem {
     calories: row.calories || undefined,
     prepTime: row.prep_time || undefined,
     available: row.available ?? true,
+    stock: parsedStock,
+    costPrice: parsedCostPrice,
     barcode: row.barcode || undefined,
     options: parsedOptions,
     variants: parsedVariants,
@@ -290,20 +302,38 @@ export async function getMenuItems(storeId?: string): Promise<StoreMenuItem[]> {
 export async function saveMenuItem(item: Omit<StoreMenuItem, "id" | "createdAt"> & { id?: string }): Promise<StoreMenuItem | null> {
   try {
     const supabase = createClient()
-    // Store options and multi-attribute variant matrix cleanly in options column
-    let optionsPayload: OptionGroup[] | { groups: OptionGroup[]; variants: VariantCombination[] } | null = null
-    if (item.options && item.options.length > 0) {
-      if (item.variants && item.variants.length > 0) {
-        optionsPayload = {
-          groups: item.options,
-          variants: item.variants,
-        }
-      } else {
-        optionsPayload = item.options
+    let optionsPayload:
+      | OptionGroup[]
+      | { groups?: OptionGroup[]; variants?: VariantCombination[]; stock?: number; costPrice?: number }
+      | null = null
+
+    if (item.variants && item.variants.length > 0) {
+      optionsPayload = {
+        groups: item.options || [],
+        variants: item.variants,
+        stock: item.stock,
+        costPrice: item.costPrice,
       }
+    } else if (item.stock !== undefined || item.costPrice !== undefined) {
+      optionsPayload = {
+        groups: item.options || [],
+        stock: item.stock,
+        costPrice: item.costPrice,
+      }
+    } else if (item.options && item.options.length > 0) {
+      optionsPayload = item.options
     }
 
-    const payload: Record<string, string | number | boolean | string[] | null | OptionGroup[] | { groups: OptionGroup[]; variants: VariantCombination[] }> = {
+    const payload: Record<
+      string,
+      | string
+      | number
+      | boolean
+      | string[]
+      | null
+      | OptionGroup[]
+      | { groups?: OptionGroup[]; variants?: VariantCombination[]; stock?: number; costPrice?: number }
+    > = {
       store_id: item.storeId,
       name: item.name,
       category: item.category,
@@ -345,6 +375,30 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
   } catch (e) {
     console.error("Supabase deleteMenuItem exception:", e)
     return false
+  }
+}
+
+export async function updateMenuItemStock(
+  item: StoreMenuItem,
+  newStock: number,
+  variantId?: string
+): Promise<StoreMenuItem | null> {
+  if (variantId && item.variants && item.variants.length > 0) {
+    const updatedVariants = item.variants.map((v) =>
+      v.id === variantId ? { ...v, stock: Math.max(0, newStock) } : v
+    )
+    const anyAvailable = updatedVariants.some((v) => v.stock > 0)
+    return saveMenuItem({
+      ...item,
+      variants: updatedVariants,
+      available: anyAvailable,
+    })
+  } else {
+    return saveMenuItem({
+      ...item,
+      stock: Math.max(0, newStock),
+      available: newStock > 0,
+    })
   }
 }
 
