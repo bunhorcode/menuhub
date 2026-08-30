@@ -1210,7 +1210,7 @@ export function SellerPortal({ user }: { user: User }) {
       {/* Menu Item Create/Edit Modal */}
       {isItemModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white text-[#0d1c2d] rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white text-[#0d1c2d] rounded-2xl p-5 sm:p-8 max-w-xl md:max-w-2xl lg:max-w-3xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-[#eef4ff] mb-4">
               <h3 className="text-lg font-bold text-[#0d1c2d]">
                 {editingItemId ? "Edit Product / Item" : "Add New Product / Item"}
@@ -1366,23 +1366,6 @@ export function SellerPortal({ user }: { user: User }) {
                   </div>
                 </div>
 
-                {/* Preset Suggestions */}
-                <p className="text-[11px] font-semibold text-[#76777d] mb-1.5">Or choose from sample images:</p>
-                <div className="grid grid-cols-3 gap-2 mb-2">
-                  {SAMPLE_IMAGES.map((img) => (
-                    <button
-                      key={img.url}
-                      type="button"
-                      onClick={() => setItemImage(img.url)}
-                      className={`relative h-12 rounded-lg overflow-hidden border-2 transition-all ${
-                        itemImage === img.url ? "border-[#006c49]" : "border-transparent"
-                      }`}
-                    >
-                      <Image src={img.url} alt={img.name} fill sizes="80px" className="object-cover" />
-                    </button>
-                  ))}
-                </div>
-
                 <input
                   type="text"
                   value={itemImage}
@@ -1450,105 +1433,127 @@ export function SellerPortal({ user }: { user: User }) {
                         </div>
 
                         {/* Option Values */}
-                        <div className="space-y-2">
+                        <div className="space-y-2.5">
                           {group.values.map((val, valueIdx) => (
                             <div
                               key={val.id}
-                              className="flex items-center gap-2 p-2 bg-[#f8f9ff] rounded-lg border border-[#eef4ff]"
+                              className="p-2.5 bg-[#f8f9ff] rounded-xl border border-[#eef4ff] flex flex-col sm:flex-row sm:items-center gap-2"
                             >
-                              {/* Variant image thumbnail */}
-                              <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-[#eef4ff] group/img cursor-pointer">
-                                {val.image ? (
-                                  <Image
-                                    src={val.image}
-                                    alt={val.label || "Variant"}
-                                    fill
-                                    sizes="36px"
-                                    className="object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-[10px] text-[#76777d]">
-                                    📷
-                                  </div>
-                                )}
-                                <label className="absolute inset-0 cursor-pointer opacity-0 group-hover/img:opacity-100 bg-black/40 flex items-center justify-center text-white text-[8px] font-bold transition-opacity">
-                                  {isUploadingVariantImg && variantUploadTarget?.groupIdx === groupIdx && variantUploadTarget?.valueIdx === valueIdx
-                                    ? "..."
-                                    : "📸"}
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={(e) => handleUploadVariantImage(groupIdx, valueIdx, e)}
-                                  />
-                                </label>
-                              </div>
+                              {/* Main Row: Image + Value Name + Mobile Delete */}
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                {/* Variant image thumbnail */}
+                                <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-[#ccdbf2] group/img cursor-pointer">
+                                  {val.image ? (
+                                    <Image
+                                      src={val.image}
+                                      alt={val.label || "Variant"}
+                                      fill
+                                      sizes="36px"
+                                      className="object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-xs text-[#76777d]">
+                                      📷
+                                    </div>
+                                  )}
+                                  <label className="absolute inset-0 cursor-pointer opacity-0 group-hover/img:opacity-100 bg-black/50 flex items-center justify-center text-white text-[9px] font-bold transition-opacity">
+                                    {isUploadingVariantImg && variantUploadTarget?.groupIdx === groupIdx && variantUploadTarget?.valueIdx === valueIdx
+                                      ? "..."
+                                      : "📸"}
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => handleUploadVariantImage(groupIdx, valueIdx, e)}
+                                    />
+                                  </label>
+                                </div>
 
-                              {/* Label input */}
-                              <input
-                                type="text"
-                                value={val.label}
-                                onChange={(e) =>
-                                  handleUpdateOptionValue(groupIdx, valueIdx, "label", e.target.value)
-                                }
-                                placeholder="Value (e.g. Red, Large, 50%)"
-                                className="flex-1 h-8 px-2.5 bg-white border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs outline-none focus:border-[#006c49] min-w-0"
-                              />
-
-                              {/* Price adjustment */}
-                              <div className="flex items-center gap-0.5 shrink-0" title="Price adjustment">
-                                <span className="text-[10px] text-[#76777d]">+$</span>
+                                {/* Label input - full width on mobile */}
                                 <input
-                                  type="number"
-                                  step="0.01"
-                                  value={val.priceAdjustment || ""}
+                                  type="text"
+                                  value={val.label}
                                   onChange={(e) =>
-                                    handleUpdateOptionValue(
-                                      groupIdx,
-                                      valueIdx,
-                                      "priceAdjustment",
-                                      parseFloat(e.target.value) || 0
-                                    )
+                                    handleUpdateOptionValue(groupIdx, valueIdx, "label", e.target.value)
                                   }
-                                  placeholder="0.00"
-                                  className="w-14 h-8 px-1.5 bg-white border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs outline-none focus:border-[#006c49] text-right"
+                                  placeholder="Value (e.g. Red, White, Size S, Large)"
+                                  className="flex-1 h-9 px-3 bg-white border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs font-semibold outline-none focus:border-[#006c49] min-w-[100px]"
                                 />
+
+                                {/* Mobile Delete Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveOptionValue(groupIdx, valueIdx)}
+                                  className="sm:hidden text-red-500 hover:text-red-700 text-xs font-bold p-1.5 rounded hover:bg-red-50 transition-all shrink-0"
+                                  title="Remove value"
+                                >
+                                  ✕
+                                </button>
                               </div>
 
-                              {/* Stock Qty */}
-                              <div className="flex items-center gap-0.5 shrink-0" title="Stock quantity (0 = Sold Out, blank = Unlimited)">
-                                <span className="text-[10px] text-[#76777d]">Qty:</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="1"
-                                  value={val.stock !== undefined ? val.stock : ""}
-                                  onChange={(e) =>
-                                    handleUpdateOptionValue(
-                                      groupIdx,
-                                      valueIdx,
-                                      "stock",
-                                      e.target.value === "" ? undefined : parseInt(e.target.value, 10)
-                                    )
-                                  }
-                                  placeholder="∞"
-                                  className={`w-12 h-8 px-1 bg-white border rounded-lg text-xs outline-none focus:border-[#006c49] text-center font-medium ${
+                              {/* Secondary Controls: Price Adj & Stock */}
+                              <div className="flex items-center gap-2 justify-end shrink-0 pl-11 sm:pl-0">
+                                {/* Price adjustment */}
+                                <div
+                                  className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-[#c6c6cd]"
+                                  title="Price adjustment"
+                                >
+                                  <span className="text-[11px] text-[#76777d] font-semibold">+$</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={val.priceAdjustment || ""}
+                                    onChange={(e) =>
+                                      handleUpdateOptionValue(
+                                        groupIdx,
+                                        valueIdx,
+                                        "priceAdjustment",
+                                        parseFloat(e.target.value) || 0
+                                      )
+                                    }
+                                    placeholder="0.00"
+                                    className="w-14 h-6 text-xs outline-none text-right font-medium text-[#0d1c2d]"
+                                  />
+                                </div>
+
+                                {/* Stock Qty */}
+                                <div
+                                  className={`flex items-center gap-1 px-2 py-1 rounded-lg border ${
                                     val.stock !== undefined && val.stock <= 0
                                       ? "border-red-300 text-red-600 bg-red-50"
-                                      : "border-[#c6c6cd] text-[#0d1c2d]"
+                                      : "border-[#c6c6cd] bg-white text-[#0d1c2d]"
                                   }`}
-                                />
-                              </div>
+                                  title="Stock quantity (0 = Sold Out, blank = Unlimited)"
+                                >
+                                  <span className="text-[11px] text-[#76777d] font-semibold">Qty:</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={val.stock !== undefined ? val.stock : ""}
+                                    onChange={(e) =>
+                                      handleUpdateOptionValue(
+                                        groupIdx,
+                                        valueIdx,
+                                        "stock",
+                                        e.target.value === "" ? undefined : parseInt(e.target.value, 10)
+                                      )
+                                    }
+                                    placeholder="∞"
+                                    className="w-10 h-6 text-xs font-bold outline-none text-center bg-transparent"
+                                  />
+                                </div>
 
-                              {/* Remove value button */}
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveOptionValue(groupIdx, valueIdx)}
-                                className="text-red-400 hover:text-red-600 text-[10px] font-bold px-1 rounded hover:bg-red-50 transition-all shrink-0"
-                                title="Remove value"
-                              >
-                                ✕
-                              </button>
+                                {/* Desktop Delete Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveOptionValue(groupIdx, valueIdx)}
+                                  className="hidden sm:inline-flex text-red-400 hover:text-red-600 text-xs font-bold px-1.5 py-1 rounded hover:bg-red-50 transition-all shrink-0"
+                                  title="Remove value"
+                                >
+                                  ✕
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1568,21 +1573,21 @@ export function SellerPortal({ user }: { user: User }) {
 
                 {/* ── Multi-Attribute Variant Matrix (SKU Combinations) ── */}
                 {itemOptions.some((g) => g.name.trim() && g.values.some((v) => v.label.trim())) && (
-                  <div className="mt-4 pt-4 border-t border-[#eef4ff]">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                  <div className="mt-5 pt-5 border-t border-[#eef4ff]">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                       <div>
-                        <p className="text-xs font-bold text-[#0d1c2d]">
-                          📊 SKU Combination Matrix & Stock
+                        <p className="text-sm font-bold text-[#0d1c2d] flex items-center gap-1.5">
+                          <span>📊 SKU Combination Matrix & Stock</span>
                         </p>
-                        <p className="text-[10px] text-[#76777d]">
-                          Set stock amount for each combination (e.g. Red/S: 2, Red/XL: 0)
+                        <p className="text-xs text-[#76777d]">
+                          Set cost, selling price, and inventory for each specific variant combination
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <button
                           type="button"
                           onClick={handleSyncCombinations}
-                          className="text-[10px] font-bold text-[#006c49] bg-white border border-[#ccdbf2] hover:border-[#006c49] px-2.5 py-1 rounded-lg transition-all"
+                          className="text-xs font-bold text-[#006c49] bg-white border border-[#ccdbf2] hover:border-[#006c49] px-2.5 py-1 rounded-lg transition-all shadow-xs"
                           title="Generate or sync all combinations"
                         >
                           ⚡ Sync SKUs
@@ -1590,30 +1595,30 @@ export function SellerPortal({ user }: { user: User }) {
                         <button
                           type="button"
                           onClick={handleSetAllSellPriceToBase}
-                          className="text-[10px] font-semibold text-[#0d1c2d] bg-white border border-[#ccdbf2] hover:bg-slate-50 px-2 py-1 rounded-lg transition-all"
+                          className="text-xs font-semibold text-[#0d1c2d] bg-white border border-[#ccdbf2] hover:bg-slate-50 px-2.5 py-1 rounded-lg transition-all"
                           title="Apply base item price to all SKU Sell Prices"
                         >
-                          Set Base Sell Price
+                          Set Base Price (${itemPrice})
                         </button>
                         <button
                           type="button"
                           onClick={() => handleSetAllVariantsStock(10)}
-                          className="text-[10px] font-semibold text-[#0d1c2d] bg-white border border-[#ccdbf2] hover:bg-slate-50 px-2 py-1 rounded-lg transition-all"
+                          className="text-xs font-semibold text-[#0d1c2d] bg-white border border-[#ccdbf2] hover:bg-slate-50 px-2 py-1 rounded-lg transition-all"
                         >
-                          All Stock: 10
+                          Stock: 10
                         </button>
                         <button
                           type="button"
                           onClick={() => handleSetAllVariantsStock(0)}
-                          className="text-[10px] font-semibold text-red-600 bg-white border border-red-200 hover:bg-red-50 px-2 py-1 rounded-lg transition-all"
+                          className="text-xs font-semibold text-red-600 bg-white border border-red-200 hover:bg-red-50 px-2 py-1 rounded-lg transition-all"
                         >
-                          All: 0
+                          Stock: 0
                         </button>
                       </div>
                     </div>
 
                     {itemVariants.length === 0 ? (
-                      <div className="text-center py-3 bg-white rounded-lg border border-dashed border-[#ccdbf2]">
+                      <div className="text-center py-4 bg-white rounded-xl border border-dashed border-[#ccdbf2]">
                         <button
                           type="button"
                           onClick={handleSyncCombinations}
@@ -1623,7 +1628,7 @@ export function SellerPortal({ user }: { user: User }) {
                         </button>
                       </div>
                     ) : (
-                      <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                      <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
                         {itemVariants.map((variant) => {
                           const isOutOfStock = variant.stock <= 0
                           const margin =
@@ -1636,35 +1641,37 @@ export function SellerPortal({ user }: { user: User }) {
                           return (
                             <div
                               key={variant.id}
-                              className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border transition-all text-xs gap-2.5 ${
+                              className={`flex flex-col md:flex-row md:items-center justify-between p-3.5 rounded-xl border transition-all gap-3 ${
                                 isOutOfStock
-                                  ? "bg-red-50/40 border-red-200"
-                                  : "bg-white border-[#eef4ff] hover:border-[#ccdbf2]"
+                                  ? "bg-red-50/30 border-red-200"
+                                  : "bg-white border-[#eef4ff] hover:border-[#ccdbf2] shadow-2xs"
                               }`}
                             >
-                              {/* Combination tags & Margin indicator */}
+                              {/* Left: Combination Badges & Status */}
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   {Object.entries(variant.options).map(([k, v]) => (
                                     <span
                                       key={k}
-                                      className="text-[10px] font-bold bg-[#eef4ff] text-[#00714d] px-2 py-0.5 rounded-md border border-[#ccdbf2]"
+                                      className="whitespace-nowrap inline-flex items-center text-xs font-bold bg-[#eef4ff] text-[#00714d] px-2.5 py-1 rounded-lg border border-[#ccdbf2]"
                                     >
                                       {k}: {v}
                                     </span>
                                   ))}
+
                                   {isOutOfStock ? (
-                                    <span className="text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                                    <span className="whitespace-nowrap inline-flex items-center text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
                                       No Stock
                                     </span>
                                   ) : (
-                                    <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                                    <span className="whitespace-nowrap inline-flex items-center text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
                                       In Stock
                                     </span>
                                   )}
+
                                   {margin !== null && (
                                     <span
-                                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                      className={`whitespace-nowrap inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${
                                         margin >= 0
                                           ? "text-emerald-700 bg-emerald-50 border border-emerald-200"
                                           : "text-red-700 bg-red-50 border border-red-200"
@@ -1676,11 +1683,14 @@ export function SellerPortal({ user }: { user: User }) {
                                 </div>
                               </div>
 
-                              {/* Cost Price, Sell Price & Stock Qty */}
-                              <div className="flex items-center gap-2 flex-wrap shrink-0">
+                              {/* Right: Cost, Sell, and Stock Fields */}
+                              <div className="flex items-center gap-2.5 flex-wrap shrink-0">
                                 {/* Cost Price */}
-                                <div className="flex items-center gap-1" title="Cost / Wholesale price (Seller unit cost)">
-                                  <span className="text-[10px] text-[#76777d] font-semibold">Cost: $</span>
+                                <div
+                                  className="flex items-center gap-1 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-[#e2e8f0]"
+                                  title="Cost / Wholesale price (Seller unit cost)"
+                                >
+                                  <span className="text-xs text-[#76777d] font-semibold whitespace-nowrap">Cost: $</span>
                                   <input
                                     type="number"
                                     step="0.01"
@@ -1693,13 +1703,16 @@ export function SellerPortal({ user }: { user: User }) {
                                       )
                                     }
                                     placeholder="0.00"
-                                    className="w-16 h-7 px-1.5 bg-white border border-[#c6c6cd] rounded-lg text-xs outline-none focus:border-[#006c49] text-right font-medium"
+                                    className="w-18 h-6 bg-white border border-[#c6c6cd] rounded-lg text-xs outline-none focus:border-[#006c49] text-right font-medium px-1.5"
                                   />
                                 </div>
 
                                 {/* Sell Price */}
-                                <div className="flex items-center gap-1" title="Selling / Retail price for this SKU">
-                                  <span className="text-[10px] text-[#006c49] font-bold">Sell: $</span>
+                                <div
+                                  className="flex items-center gap-1 bg-emerald-50/60 px-2.5 py-1.5 rounded-xl border border-emerald-200"
+                                  title="Selling / Retail price for this SKU"
+                                >
+                                  <span className="text-xs text-[#006c49] font-bold whitespace-nowrap">Sell: $</span>
                                   <input
                                     type="number"
                                     step="0.01"
@@ -1712,13 +1725,20 @@ export function SellerPortal({ user }: { user: User }) {
                                       )
                                     }
                                     placeholder={itemPrice}
-                                    className="w-16 h-7 px-1.5 bg-white border border-[#006c49] text-[#006c49] rounded-lg text-xs font-bold outline-none text-right"
+                                    className="w-18 h-6 bg-white border border-[#006c49] text-[#006c49] rounded-lg text-xs font-bold outline-none text-right px-1.5"
                                   />
                                 </div>
 
                                 {/* Stock Quantity */}
-                                <div className="flex items-center gap-1" title="Stock quantity for this SKU (0 = No Stock)">
-                                  <span className="text-[10px] text-[#76777d] font-semibold">Stock:</span>
+                                <div
+                                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border ${
+                                    isOutOfStock
+                                      ? "bg-red-50 border-red-200"
+                                      : "bg-slate-50 border-[#e2e8f0]"
+                                  }`}
+                                  title="Stock quantity for this SKU (0 = No Stock)"
+                                >
+                                  <span className="text-xs text-[#76777d] font-semibold whitespace-nowrap">Stock:</span>
                                   <input
                                     type="number"
                                     min="0"
@@ -1730,9 +1750,9 @@ export function SellerPortal({ user }: { user: User }) {
                                         Math.max(0, parseInt(e.target.value, 10) || 0)
                                       )
                                     }
-                                    className={`w-14 h-7 px-1.5 bg-white border rounded-lg text-xs font-bold text-center outline-none focus:border-[#006c49] ${
+                                    className={`w-14 h-6 bg-white border rounded-lg text-xs font-bold text-center outline-none focus:border-[#006c49] px-1 ${
                                       isOutOfStock
-                                        ? "border-red-300 text-red-600 bg-red-50"
+                                        ? "border-red-300 text-red-600"
                                         : "border-[#c6c6cd] text-[#0d1c2d]"
                                     }`}
                                   />
