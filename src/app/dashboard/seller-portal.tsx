@@ -1518,7 +1518,7 @@ export function SellerPortal({ user }: { user: User }) {
                   </div>
                 </div>
 
-                {/* 3. Interactive Inventory Management Table */}
+                {/* 3. Interactive Inventory Management Table & Mobile Cards */}
                 {filteredInventoryItems.length === 0 ? (
                   <div className="text-center py-12 bg-[#f8f9ff] rounded-2xl border border-dashed border-[#ccdbf2]">
                     <span className="text-3xl inline-block mb-2">📦</span>
@@ -1537,41 +1537,42 @@ export function SellerPortal({ user }: { user: User }) {
                     </button>
                   </div>
                 ) : (
-                  <div className="border border-[#eef4ff] rounded-2xl overflow-hidden bg-white shadow-2xs">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-[#f8f9ff] text-[#76777d] border-b border-[#eef4ff] font-bold text-[11px]">
-                          <tr>
-                            <th className="py-3 px-4">Product</th>
-                            <th className="py-3 px-4">Category / Barcode</th>
-                            <th className="py-3 px-4">Price</th>
-                            <th className="py-3 px-4">Stock Status</th>
-                            <th className="py-3 px-4 text-center">Current Stock</th>
-                            <th className="py-3 px-4 text-right">Quick Restock Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#f1f5f9]">
-                          {filteredInventoryItems.map((item) => {
-                            const stockCount = getItemStockCount(item)
-                            const status = getItemStockStatus(item)
-                            const hasVariants = item.variants && item.variants.length > 0
-                            const isExpanded = !!expandedItemIds[item.id]
-                            const isHighlighted = highlightedItemId === item.id
+                  <div className="space-y-4">
+                    {/* ── DESKTOP & TABLET: Clean Real HTML Table (hidden on mobile) ── */}
+                    <div className="hidden md:block border border-[#eef4ff] rounded-2xl overflow-hidden bg-white shadow-2xs">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="bg-[#f8f9ff] text-[#76777d] border-b border-[#eef4ff] font-bold text-[11px] uppercase tracking-wider">
+                            <tr>
+                              <th className="py-3 px-4 w-[28%]">Product</th>
+                              <th className="py-3 px-4 w-[20%]">Category / Barcode</th>
+                              <th className="py-3 px-4 w-[12%]">Price</th>
+                              <th className="py-3 px-4 w-[14%]">Stock Status</th>
+                              <th className="py-3 px-4 w-[14%] text-center">Current Stock</th>
+                              <th className="py-3 px-4 w-[12%] text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#f1f5f9]">
+                            {filteredInventoryItems.map((item) => {
+                              const stockCount = getItemStockCount(item)
+                              const status = getItemStockStatus(item)
+                              const hasVariants = item.variants && item.variants.length > 0
+                              const isExpanded = !!expandedItemIds[item.id]
+                              const isHighlighted = highlightedItemId === item.id
 
-                            return (
-                              <tr
-                                key={item.id}
-                                id={`inventory-row-${item.id}`}
-                                className={`transition-colors ${
-                                  isHighlighted
-                                    ? "bg-emerald-50 ring-2 ring-emerald-400"
-                                    : "hover:bg-[#fbfdff]"
-                                }`}
-                              >
-                                <td colSpan={6} className="p-0">
-                                  <div className="py-3.5 px-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                                    {/* Product Thumbnail & Name */}
-                                    <div className="flex items-center gap-3 min-w-[220px] flex-1">
+                              return (
+                                <tr
+                                  key={item.id}
+                                  id={`inventory-row-${item.id}`}
+                                  className={`transition-colors group ${
+                                    isHighlighted
+                                      ? "bg-emerald-50 ring-2 ring-emerald-400"
+                                      : "hover:bg-[#fbfdff]"
+                                  }`}
+                                >
+                                  {/* Col 1: Product Thumbnail & Name */}
+                                  <td className="py-3.5 px-4 align-middle">
+                                    <div className="flex items-center gap-3">
                                       <div className="relative w-12 h-12 rounded-xl bg-[#f4f7fc] border border-[#eef4ff] overflow-hidden shrink-0 flex items-center justify-center">
                                         <Image
                                           src={item.image}
@@ -1585,285 +1586,547 @@ export function SellerPortal({ user }: { user: User }) {
                                         <p className="font-bold text-xs sm:text-sm text-[#0d1c2d] truncate">
                                           {item.name}
                                         </p>
-                                        <div className="flex items-center gap-1.5 mt-0.5">
-                                          {hasVariants ? (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setExpandedItemIds((prev) => ({
-                                                  ...prev,
-                                                  [item.id]: !prev[item.id],
-                                                }))
-                                              }
-                                              className="text-[10px] font-bold text-[#00714d] bg-[#eef4ff] hover:bg-[#dbe9ff] px-2 py-0.5 rounded-md transition-all flex items-center gap-1"
-                                            >
-                                              <span>{isExpanded ? "▼ Hide SKUs" : "▶ View SKUs"}</span>
-                                              <span>({item.variants?.length} variants)</span>
-                                            </button>
-                                          ) : (
-                                            <span className="text-[10px] text-slate-500 font-medium">
-                                              Single Product
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {/* Category & Barcode */}
-                                    <div className="min-w-[140px]">
-                                      <span className="text-[10px] font-semibold text-[#00714d] bg-[#eef4ff] px-2 py-0.5 rounded-full border border-[#ccdbf2]">
-                                        {item.category}
-                                      </span>
-                                      {item.barcode ? (
-                                        <p className="text-[10px] font-mono text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-bold mt-1 inline-block">
-                                          🏷️ {item.barcode}
-                                        </p>
-                                      ) : (
-                                        <p className="text-[10px] text-slate-400 italic mt-1">
-                                          No Barcode
-                                        </p>
-                                      )}
-                                    </div>
-
-                                    {/* Price & Cost */}
-                                    <div className="min-w-[100px]">
-                                      <p className="font-black text-xs sm:text-sm text-[#006c49]">
-                                        ${item.price.toFixed(2)}
-                                      </p>
-                                      {item.costPrice ? (
-                                        <p className="text-[10px] text-[#76777d]">
-                                          Cost: ${item.costPrice.toFixed(2)}
-                                        </p>
-                                      ) : null}
-                                    </div>
-
-                                    {/* Stock Status Badge */}
-                                    <div className="min-w-[110px]">
-                                      <span
-                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                          status === "in_stock"
-                                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                            : status === "low_stock"
-                                            ? "bg-amber-50 text-amber-700 border border-amber-200 animate-pulse"
-                                            : "bg-red-50 text-red-700 border border-red-200"
-                                        }`}
-                                      >
-                                        <span>
-                                          {status === "in_stock" ? "✓" : status === "low_stock" ? "⚠️" : "✕"}
-                                        </span>
-                                        <span>
-                                          {status === "in_stock"
-                                            ? "In Stock"
-                                            : status === "low_stock"
-                                            ? "Low Stock"
-                                            : "Sold Out"}
-                                        </span>
-                                      </span>
-                                    </div>
-
-                                    {/* Current Stock Count & Stepper */}
-                                    <div className="min-w-[140px] flex items-center justify-center">
-                                      {hasVariants ? (
-                                        <div className="text-center">
-                                          <p className="text-sm font-black text-[#0d1c2d]">
-                                            {stockCount} units
-                                          </p>
-                                          <span className="text-[10px] text-[#76777d]">
-                                            Total across variants
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-center gap-1 bg-[#f8f9ff] border border-[#ccdbf2] rounded-xl p-1 shadow-2xs">
+                                        {hasVariants ? (
                                           <button
                                             type="button"
                                             onClick={() =>
-                                              handleInlineStockChange(item, Math.max(0, stockCount - 1))
+                                              setExpandedItemIds((prev) => ({
+                                                ...prev,
+                                                [item.id]: !prev[item.id],
+                                              }))
                                             }
-                                            className="w-7 h-7 rounded-lg bg-white hover:bg-slate-100 text-xs font-black text-[#0d1c2d] flex items-center justify-center transition-all shadow-2xs"
-                                            title="Decrease stock by 1"
+                                            className="text-[10px] font-bold text-[#00714d] bg-[#eef4ff] hover:bg-[#dbe9ff] px-2 py-0.5 rounded-md transition-all flex items-center gap-1 mt-1"
+                                          >
+                                            <span>{isExpanded ? "▼ Hide SKUs" : "▶ View SKUs"}</span>
+                                            <span>({item.variants?.length} variants)</span>
+                                          </button>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400 font-medium">
+                                            Single Item
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* Col 2: Category & Barcode */}
+                                  <td className="py-3.5 px-4 align-middle">
+                                    <div className="space-y-1">
+                                      <span className="text-[10px] font-semibold text-[#00714d] bg-[#eef4ff] px-2 py-0.5 rounded-full border border-[#ccdbf2] inline-block">
+                                        {item.category}
+                                      </span>
+                                      {item.barcode ? (
+                                        <p className="text-[10px] font-mono text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-bold">
+                                          🏷️ {item.barcode}
+                                        </p>
+                                      ) : (
+                                        <p className="text-[10px] text-slate-400 italic">No Barcode</p>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Col 3: Price & Cost */}
+                                  <td className="py-3.5 px-4 align-middle">
+                                    <p className="font-black text-xs sm:text-sm text-[#006c49]">
+                                      ${item.price.toFixed(2)}
+                                    </p>
+                                    {item.costPrice ? (
+                                      <p className="text-[10px] text-[#76777d]">
+                                        Cost: ${item.costPrice.toFixed(2)}
+                                      </p>
+                                    ) : null}
+                                  </td>
+
+                                  {/* Col 4: Stock Status Badge */}
+                                  <td className="py-3.5 px-4 align-middle">
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                        status === "in_stock"
+                                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                          : status === "low_stock"
+                                          ? "bg-amber-50 text-amber-700 border border-amber-200 animate-pulse"
+                                          : "bg-red-50 text-red-700 border border-red-200"
+                                      }`}
+                                    >
+                                      <span>
+                                        {status === "in_stock" ? "✓" : status === "low_stock" ? "⚠️" : "✕"}
+                                      </span>
+                                      <span>
+                                        {status === "in_stock"
+                                          ? "In Stock"
+                                          : status === "low_stock"
+                                          ? "Low Stock"
+                                          : "Sold Out"}
+                                      </span>
+                                    </span>
+                                  </td>
+
+                                  {/* Col 5: Current Stock Count & Stepper */}
+                                  <td className="py-3.5 px-4 align-middle text-center">
+                                    {hasVariants ? (
+                                      <div>
+                                        <p className="text-sm font-black text-[#0d1c2d]">
+                                          {stockCount} units
+                                        </p>
+                                        <span className="text-[10px] text-[#76777d]">
+                                          Total across variants
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <div className="inline-flex items-center gap-1 bg-[#f8f9ff] border border-[#ccdbf2] rounded-xl p-1 shadow-2xs">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleInlineStockChange(item, Math.max(0, stockCount - 1))
+                                          }
+                                          className="w-7 h-7 rounded-lg bg-white hover:bg-slate-100 text-xs font-black text-[#0d1c2d] flex items-center justify-center transition-all shadow-2xs"
+                                          title="Decrease stock by 1"
+                                        >
+                                          −
+                                        </button>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={stockCount}
+                                          onChange={(e) => {
+                                            const v = parseInt(e.target.value)
+                                            handleInlineStockChange(item, isNaN(v) ? 0 : v)
+                                          }}
+                                          className="w-12 text-center text-xs font-black bg-transparent border-none outline-none text-[#0d1c2d]"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleInlineStockChange(item, stockCount + 1)}
+                                          className="w-7 h-7 rounded-lg bg-[#006c49] hover:bg-[#005236] text-xs font-black text-white flex items-center justify-center transition-all shadow-2xs"
+                                          title="Increase stock by 1"
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  {/* Col 6: Quick Restock Actions */}
+                                  <td className="py-3.5 px-4 align-middle text-right">
+                                    {!hasVariants ? (
+                                      <div className="inline-flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleInlineStockChange(item, stockCount + 10)}
+                                          className="px-2 py-1 rounded-lg bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#00714d] text-[11px] font-bold border border-[#ccdbf2] transition-all"
+                                          title="Add +10 units"
+                                        >
+                                          +10
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleInlineStockChange(item, stockCount > 0 ? 0 : 25)
+                                          }
+                                          className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                                            stockCount > 0
+                                              ? "text-red-600 bg-red-50 hover:bg-red-100 border-red-200"
+                                              : "text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200"
+                                          }`}
+                                        >
+                                          {stockCount > 0 ? "Set 0" : "Stock 25"}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setExpandedItemIds((prev) => ({
+                                            ...prev,
+                                            [item.id]: !prev[item.id],
+                                          }))
+                                        }
+                                        className="px-3 py-1.5 rounded-lg bg-[#006c49] hover:bg-[#005236] text-white text-xs font-bold shadow-2xs transition-all whitespace-nowrap"
+                                      >
+                                        {isExpanded ? "Hide SKUs" : "Manage SKUs"}
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* ── MOBILE VIEW: Dedicated Clean Inventory Cards (visible on mobile only) ── */}
+                    <div className="block md:hidden space-y-3">
+                      {filteredInventoryItems.map((item) => {
+                        const stockCount = getItemStockCount(item)
+                        const status = getItemStockStatus(item)
+                        const hasVariants = item.variants && item.variants.length > 0
+                        const isExpanded = !!expandedItemIds[item.id]
+                        const isHighlighted = highlightedItemId === item.id
+
+                        return (
+                          <div
+                            key={item.id}
+                            id={`inventory-card-${item.id}`}
+                            className={`p-3.5 rounded-2xl border bg-white shadow-2xs transition-all ${
+                              isHighlighted
+                                ? "border-emerald-400 bg-emerald-50/40 ring-2 ring-emerald-300"
+                                : "border-[#eef4ff] hover:border-[#cbd5e1]"
+                            }`}
+                          >
+                            {/* Card Header: Image + Title + Price + Status */}
+                            <div className="flex items-start gap-3">
+                              <div className="relative w-14 h-14 rounded-xl bg-[#f4f7fc] border border-[#eef4ff] overflow-hidden shrink-0 flex items-center justify-center">
+                                <Image
+                                  src={item.image}
+                                  alt={item.name}
+                                  fill
+                                  sizes="56px"
+                                  className="object-contain p-1"
+                                />
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-1">
+                                  <h4 className="font-bold text-xs text-[#0d1c2d] line-clamp-1">
+                                    {item.name}
+                                  </h4>
+                                  <span className="font-black text-xs text-[#006c49] shrink-0">
+                                    ${item.price.toFixed(2)}
+                                  </span>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                  <span className="text-[9px] font-semibold text-[#00714d] bg-[#eef4ff] px-2 py-0.2 rounded-full border border-[#ccdbf2]">
+                                    {item.category}
+                                  </span>
+                                  {item.barcode && (
+                                    <span className="text-[9px] font-mono text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-bold">
+                                      🏷️ {item.barcode}
+                                    </span>
+                                  )}
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[9px] font-bold ${
+                                      status === "in_stock"
+                                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                        : status === "low_stock"
+                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                        : "bg-red-50 text-red-700 border border-red-200"
+                                    }`}
+                                  >
+                                    {status === "in_stock"
+                                      ? "✓ In Stock"
+                                      : status === "low_stock"
+                                      ? `⚠️ Low (${stockCount})`
+                                      : "✕ Sold Out"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Card Footer: Stock Stepper & Quick Actions */}
+                            <div className="mt-3 pt-3 border-t border-[#f1f5f9] flex items-center justify-between gap-2">
+                              {!hasVariants ? (
+                                <>
+                                  <div className="flex items-center gap-1 bg-[#f8f9ff] border border-[#ccdbf2] rounded-xl p-1 shadow-2xs">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleInlineStockChange(item, Math.max(0, stockCount - 1))
+                                      }
+                                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-100 text-xs font-black text-[#0d1c2d] flex items-center justify-center shadow-2xs"
+                                    >
+                                      −
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={stockCount}
+                                      onChange={(e) => {
+                                        const v = parseInt(e.target.value)
+                                        handleInlineStockChange(item, isNaN(v) ? 0 : v)
+                                      }}
+                                      className="w-10 text-center text-xs font-black bg-transparent border-none outline-none text-[#0d1c2d]"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInlineStockChange(item, stockCount + 1)}
+                                      className="w-7 h-7 rounded-lg bg-[#006c49] hover:bg-[#005236] text-xs font-black text-white flex items-center justify-center shadow-2xs"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInlineStockChange(item, stockCount + 10)}
+                                      className="px-2 py-1.5 rounded-lg bg-[#eef4ff] text-[#00714d] text-[10px] font-bold border border-[#ccdbf2]"
+                                    >
+                                      +10
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleInlineStockChange(item, stockCount > 0 ? 0 : 25)
+                                      }
+                                      className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border ${
+                                        stockCount > 0
+                                          ? "text-red-600 bg-red-50 border-red-200"
+                                          : "text-emerald-700 bg-emerald-50 border-emerald-200"
+                                      }`}
+                                    >
+                                      {stockCount > 0 ? "Set 0" : "Stock 25"}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="w-full flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="text-xs font-black text-[#0d1c2d]">
+                                      {stockCount} units
+                                    </p>
+                                    <p className="text-[10px] text-[#76777d]">
+                                      Across {item.variants?.length} SKU variants
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedItemIds((prev) => ({
+                                        ...prev,
+                                        [item.id]: !prev[item.id],
+                                      }))
+                                    }
+                                    className="px-3 py-1.5 rounded-xl bg-[#006c49] hover:bg-[#005236] text-white text-xs font-bold shadow-2xs transition-all"
+                                  >
+                                    {isExpanded ? "▼ Hide SKUs" : "▶ Manage SKUs"}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Mobile Expandable SKU Matrix */}
+                            {hasVariants && isExpanded && (
+                              <div className="mt-3 pt-3 border-t border-[#eef4ff] space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-[11px] font-bold text-[#0d1c2d]">
+                                    🧩 Variant SKU Matrix ({item.variants?.length})
+                                  </p>
+                                  <span className="text-[9px] text-[#76777d]">
+                                    Set stock per combo
+                                  </span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  {item.variants?.map((v) => {
+                                    const comboLabel = Object.entries(v.options)
+                                      .map(([grp, val]) => `${grp}: ${val}`)
+                                      .join(" · ")
+                                    const skuStatus =
+                                      v.stock <= 0
+                                        ? "out_of_stock"
+                                        : v.stock <= 5
+                                        ? "low_stock"
+                                        : "in_stock"
+
+                                    return (
+                                      <div
+                                        key={v.id}
+                                        className="p-2 bg-[#f8f9ff] rounded-xl border border-[#ccdbf2] flex items-center justify-between gap-2"
+                                      >
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-[11px] font-bold text-[#0d1c2d] truncate">
+                                            {comboLabel}
+                                          </p>
+                                          <div className="flex items-center gap-1.5 mt-0.5">
+                                            <span className="text-[11px] font-bold text-[#006c49]">
+                                              ${(v.sellPrice || item.price).toFixed(2)}
+                                            </span>
+                                            <span
+                                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
+                                                skuStatus === "in_stock"
+                                                  ? "bg-emerald-100 text-emerald-800"
+                                                  : skuStatus === "low_stock"
+                                                  ? "bg-amber-100 text-amber-800"
+                                                  : "bg-red-100 text-red-800"
+                                              }`}
+                                            >
+                                              {v.stock} in stock
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1 bg-white border border-[#ccdbf2] rounded-lg p-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleInlineStockChange(
+                                                item,
+                                                Math.max(0, (v.stock || 0) - 1),
+                                                v.id
+                                              )
+                                            }
+                                            className="w-6 h-6 rounded bg-slate-50 hover:bg-slate-100 text-xs font-black text-[#0d1c2d] flex items-center justify-center shadow-2xs"
                                           >
                                             −
                                           </button>
                                           <input
                                             type="number"
                                             min="0"
-                                            value={stockCount}
+                                            value={v.stock || 0}
                                             onChange={(e) => {
-                                              const v = parseInt(e.target.value)
-                                              handleInlineStockChange(item, isNaN(v) ? 0 : v)
+                                              const val = parseInt(e.target.value)
+                                              handleInlineStockChange(
+                                                item,
+                                                isNaN(val) ? 0 : val,
+                                                v.id
+                                              )
                                             }}
-                                            className="w-12 text-center text-xs font-black bg-transparent border-none outline-none text-[#0d1c2d]"
+                                            className="w-8 text-center text-xs font-bold bg-transparent border-none outline-none text-[#0d1c2d]"
                                           />
                                           <button
                                             type="button"
-                                            onClick={() => handleInlineStockChange(item, stockCount + 1)}
-                                            className="w-7 h-7 rounded-lg bg-[#006c49] hover:bg-[#005236] text-xs font-black text-white flex items-center justify-center transition-all shadow-2xs"
-                                            title="Increase stock by 1"
+                                            onClick={() =>
+                                              handleInlineStockChange(
+                                                item,
+                                                (v.stock || 0) + 1,
+                                                v.id
+                                              )
+                                            }
+                                            className="w-6 h-6 rounded bg-[#006c49] hover:bg-[#005236] text-xs font-black text-white flex items-center justify-center shadow-2xs"
                                           >
                                             +
                                           </button>
                                         </div>
-                                      )}
-                                    </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
 
-                                    {/* Quick Restock Chips & Toggle */}
-                                    <div className="flex items-center justify-end gap-1.5 min-w-[160px]">
-                                      {!hasVariants ? (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleInlineStockChange(item, stockCount + 10)}
-                                            className="px-2 py-1 rounded-lg bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#00714d] text-[11px] font-bold border border-[#ccdbf2] transition-all"
-                                            title="Add +10 units"
-                                          >
-                                            +10
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleInlineStockChange(item, stockCount + 50)}
-                                            className="px-2 py-1 rounded-lg bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#00714d] text-[11px] font-bold border border-[#ccdbf2] transition-all"
-                                            title="Add +50 units"
-                                          >
-                                            +50
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleInlineStockChange(item, stockCount > 0 ? 0 : 25)
-                                            }
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${
-                                              stockCount > 0
-                                                ? "text-red-600 bg-red-50 hover:bg-red-100 border-red-200"
-                                                : "text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200"
-                                            }`}
-                                          >
-                                            {stockCount > 0 ? "Set 0" : "Stock 25"}
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setExpandedItemIds((prev) => ({
-                                              ...prev,
-                                              [item.id]: !prev[item.id],
-                                            }))
-                                          }
-                                          className="px-3 py-1.5 rounded-lg bg-[#006c49] hover:bg-[#005236] text-white text-xs font-bold shadow-2xs transition-all"
+                    {/* ── DESKTOP EXPANDED SKU SUB-PANELS (rendered below the table) ── */}
+                    <div className="hidden md:block space-y-3">
+                      {filteredInventoryItems
+                        .filter((item) => item.variants && item.variants.length > 0 && expandedItemIds[item.id])
+                        .map((item) => (
+                          <div
+                            key={`sku-panel-${item.id}`}
+                            className="bg-[#f8f9ff] border border-[#ccdbf2] rounded-2xl p-4 animate-in fade-in slide-in-from-top-2 duration-150"
+                          >
+                            <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#eef4ff]">
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">🧩</span>
+                                <h4 className="text-xs sm:text-sm font-bold text-[#0d1c2d]">
+                                  Variant SKU Matrix for &quot;{item.name}&quot; ({item.variants?.length} combinations)
+                                </h4>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedItemIds((prev) => ({
+                                    ...prev,
+                                    [item.id]: false,
+                                  }))
+                                }
+                                className="text-xs font-bold text-slate-500 hover:text-slate-800"
+                              >
+                                Close ✕
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                              {item.variants?.map((v) => {
+                                const comboLabel = Object.entries(v.options)
+                                  .map(([grp, val]) => `${grp}: ${val}`)
+                                  .join(" · ")
+                                const skuStatus =
+                                  v.stock <= 0
+                                    ? "out_of_stock"
+                                    : v.stock <= 5
+                                    ? "low_stock"
+                                    : "in_stock"
+
+                                return (
+                                  <div
+                                    key={v.id}
+                                    className="p-3 bg-white rounded-xl border border-[#ccdbf2] shadow-2xs flex items-center justify-between gap-2"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-xs font-bold text-[#0d1c2d] truncate">
+                                        {comboLabel}
+                                      </p>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-xs font-bold text-[#006c49]">
+                                          ${(v.sellPrice || item.price).toFixed(2)}
+                                        </span>
+                                        <span
+                                          className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
+                                            skuStatus === "in_stock"
+                                              ? "bg-emerald-50 text-emerald-700"
+                                              : skuStatus === "low_stock"
+                                              ? "bg-amber-50 text-amber-700"
+                                              : "bg-red-50 text-red-700"
+                                          }`}
                                         >
-                                          {isExpanded ? "Hide Variants" : "Manage Variant SKUs"}
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Expandable Multi-Variant SKU Sub-table */}
-                                  {hasVariants && isExpanded && (
-                                    <div className="bg-[#f8f9ff] border-t border-[#eef4ff] p-3 sm:p-4 animate-in fade-in slide-in-from-top-2 duration-150">
-                                      <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#eef4ff]">
-                                        <p className="text-[11px] font-bold text-[#0d1c2d] flex items-center gap-1.5">
-                                          <span>🧩</span>
-                                          <span>Variant SKU Matrix for &quot;{item.name}&quot;</span>
-                                        </p>
-                                        <span className="text-[10px] text-[#76777d]">
-                                          Adjust individual SKU stock and price
+                                          {v.stock} in stock
                                         </span>
                                       </div>
-
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                                        {item.variants?.map((v) => {
-                                          const comboLabel = Object.entries(v.options)
-                                            .map(([grp, val]) => `${grp}: ${val}`)
-                                            .join(" · ")
-                                          const skuStatus =
-                                            v.stock <= 0
-                                              ? "out_of_stock"
-                                              : v.stock <= 5
-                                              ? "low_stock"
-                                              : "in_stock"
-
-                                          return (
-                                            <div
-                                              key={v.id}
-                                              className="p-3 bg-white rounded-xl border border-[#ccdbf2] shadow-2xs flex items-center justify-between gap-2"
-                                            >
-                                              <div className="min-w-0 flex-1">
-                                                <p className="text-xs font-bold text-[#0d1c2d] truncate">
-                                                  {comboLabel}
-                                                </p>
-                                                <div className="flex items-center gap-2 mt-0.5">
-                                                  <span className="text-xs font-bold text-[#006c49]">
-                                                    ${(v.sellPrice || item.price).toFixed(2)}
-                                                  </span>
-                                                  <span
-                                                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
-                                                      skuStatus === "in_stock"
-                                                        ? "bg-emerald-50 text-emerald-700"
-                                                        : skuStatus === "low_stock"
-                                                        ? "bg-amber-50 text-amber-700"
-                                                        : "bg-red-50 text-red-700"
-                                                    }`}
-                                                  >
-                                                    {v.stock} in stock
-                                                  </span>
-                                                </div>
-                                              </div>
-
-                                              {/* SKU Stepper */}
-                                              <div className="flex items-center gap-1 bg-[#f8f9ff] border border-[#ccdbf2] rounded-lg p-0.5">
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    handleInlineStockChange(
-                                                      item,
-                                                      Math.max(0, (v.stock || 0) - 1),
-                                                      v.id
-                                                    )
-                                                  }
-                                                  className="w-6 h-6 rounded bg-white hover:bg-slate-100 text-xs font-bold text-[#0d1c2d] flex items-center justify-center shadow-2xs"
-                                                >
-                                                  −
-                                                </button>
-                                                <input
-                                                  type="number"
-                                                  min="0"
-                                                  value={v.stock || 0}
-                                                  onChange={(e) => {
-                                                    const val = parseInt(e.target.value)
-                                                    handleInlineStockChange(
-                                                      item,
-                                                      isNaN(val) ? 0 : val,
-                                                      v.id
-                                                    )
-                                                  }}
-                                                  className="w-8 text-center text-xs font-bold bg-transparent border-none outline-none text-[#0d1c2d]"
-                                                />
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    handleInlineStockChange(
-                                                      item,
-                                                      (v.stock || 0) + 1,
-                                                      v.id
-                                                    )
-                                                  }
-                                                  className="w-6 h-6 rounded bg-[#006c49] hover:bg-[#005236] text-xs font-bold text-white flex items-center justify-center shadow-2xs"
-                                                >
-                                                  +
-                                                </button>
-                                              </div>
-                                            </div>
-                                          )
-                                        })}
-                                      </div>
                                     </div>
-                                  )}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
+
+                                    {/* SKU Stepper */}
+                                    <div className="flex items-center gap-1 bg-[#f8f9ff] border border-[#ccdbf2] rounded-lg p-0.5">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleInlineStockChange(
+                                            item,
+                                            Math.max(0, (v.stock || 0) - 1),
+                                            v.id
+                                          )
+                                        }
+                                        className="w-6 h-6 rounded bg-white hover:bg-slate-100 text-xs font-bold text-[#0d1c2d] flex items-center justify-center shadow-2xs"
+                                      >
+                                        −
+                                      </button>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={v.stock || 0}
+                                        onChange={(e) => {
+                                          const val = parseInt(e.target.value)
+                                          handleInlineStockChange(
+                                            item,
+                                            isNaN(val) ? 0 : val,
+                                            v.id
+                                          )
+                                        }}
+                                        className="w-8 text-center text-xs font-bold bg-transparent border-none outline-none text-[#0d1c2d]"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleInlineStockChange(
+                                            item,
+                                            (v.stock || 0) + 1,
+                                            v.id
+                                          )
+                                        }
+                                        className="w-6 h-6 rounded bg-[#006c49] hover:bg-[#005236] text-xs font-bold text-white flex items-center justify-center shadow-2xs"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))}
                     </div>
                   </div>
                 )}
