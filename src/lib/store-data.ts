@@ -1,5 +1,5 @@
 import { createClient } from "./supabase/client"
-import { Store, StoreMenuItem, SellerProfile } from "./seller-types"
+import { Store, StoreMenuItem, SellerProfile, OptionGroup, VariantCombination } from "./seller-types"
 
 export const DEFAULT_STORES: Store[] = []
 
@@ -46,6 +46,7 @@ interface DbMenuItemRow {
   calories: string | null
   prep_time: string | null
   available: boolean
+  options: OptionGroup[] | null
   created_at: string
 }
 
@@ -82,6 +83,25 @@ function mapDbStore(row: DbStoreRow): Store {
 }
 
 function mapDbMenuItem(row: DbMenuItemRow): StoreMenuItem {
+  // Parse options & variants matrix — handle both array and { groups, variants } object
+  let parsedOptions: OptionGroup[] | undefined = undefined
+  let parsedVariants: VariantCombination[] | undefined = undefined
+
+  if (row.options) {
+    try {
+      const raw = typeof row.options === "string" ? JSON.parse(row.options) : row.options
+      if (Array.isArray(raw)) {
+        parsedOptions = raw.length > 0 ? raw : undefined
+      } else if (raw && typeof raw === "object") {
+        parsedOptions = Array.isArray(raw.groups) && raw.groups.length > 0 ? raw.groups : undefined
+        parsedVariants = Array.isArray(raw.variants) && raw.variants.length > 0 ? raw.variants : undefined
+      }
+    } catch {
+      parsedOptions = undefined
+      parsedVariants = undefined
+    }
+  }
+
   return {
     id: row.id,
     storeId: row.store_id,
@@ -94,6 +114,8 @@ function mapDbMenuItem(row: DbMenuItemRow): StoreMenuItem {
     calories: row.calories || undefined,
     prepTime: row.prep_time || undefined,
     available: row.available ?? true,
+    options: parsedOptions,
+    variants: parsedVariants,
     createdAt: row.created_at,
   }
 }
@@ -238,7 +260,20 @@ export async function getMenuItems(storeId?: string): Promise<StoreMenuItem[]> {
 export async function saveMenuItem(item: Omit<StoreMenuItem, "id" | "createdAt"> & { id?: string }): Promise<StoreMenuItem | null> {
   try {
     const supabase = createClient()
-    const payload: Partial<DbMenuItemRow> = {
+    // Store options and multi-attribute variant matrix cleanly in options column
+    let optionsPayload: any = null
+    if (item.options && item.options.length > 0) {
+      if (item.variants && item.variants.length > 0) {
+        optionsPayload = {
+          groups: item.options,
+          variants: item.variants,
+        }
+      } else {
+        optionsPayload = item.options
+      }
+    }
+
+    const payload: any = {
       store_id: item.storeId,
       name: item.name,
       category: item.category,
@@ -249,6 +284,7 @@ export async function saveMenuItem(item: Omit<StoreMenuItem, "id" | "createdAt">
       calories: item.calories || null,
       prep_time: item.prepTime || null,
       available: item.available ?? true,
+      options: optionsPayload,
     }
     if (item.id && !item.id.startsWith("item-")) {
       payload.id = item.id

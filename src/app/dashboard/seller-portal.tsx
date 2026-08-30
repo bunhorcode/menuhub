@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { type User } from "@supabase/supabase-js"
-import { SellerProfile, Store, StoreMenuItem } from "@/lib/seller-types"
+import { SellerProfile, Store, StoreMenuItem, OptionGroup, OptionValue, VariantCombination } from "@/lib/seller-types"
 import {
   getSellerProfile,
   saveSellerProfile,
@@ -89,7 +89,163 @@ export function SellerPortal({ user }: { user: User }) {
   // Cropper states
   const [isCropperOpen, setIsCropperOpen] = useState(false)
   const [cropperSrc, setCropperSrc] = useState<string | null>(null)
-  const [cropperTarget, setCropperTarget] = useState<"store" | "product" | null>(null)
+  const [cropperTarget, setCropperTarget] = useState<"store" | "product" | "variant" | null>(null)
+
+  // Variant option builder state
+  const [itemOptions, setItemOptions] = useState<OptionGroup[]>([])
+  const [itemVariants, setItemVariants] = useState<VariantCombination[]>([])
+  const [variantUploadTarget, setVariantUploadTarget] = useState<{ groupIdx: number; valueIdx: number } | null>(null)
+  const [isUploadingVariantImg, setIsUploadingVariantImg] = useState(false)
+
+  // ── Multi-Attribute Variant Combination Generator ──────────────────────────
+  const generateCombinations = (
+    groups: OptionGroup[],
+    existingVariants: VariantCombination[] = []
+  ): VariantCombination[] => {
+    const validGroups = groups.filter(
+      (g) => g.name.trim() && g.values.filter((v) => v.label.trim()).length > 0
+    )
+    if (validGroups.length === 0) return []
+
+    let combos: Record<string, string>[] = [{}]
+    for (const group of validGroups) {
+      const newCombos: Record<string, string>[] = []
+      const validValues = group.values.filter((v) => v.label.trim())
+      for (const existing of combos) {
+        for (const val of validValues) {
+          newCombos.push({ ...existing, [group.name.trim()]: val.label.trim() })
+        }
+      }
+      combos = newCombos
+    }
+
+    return combos.map((combo) => {
+      const existing = existingVariants.find((ev) => {
+        const keys = Object.keys(combo)
+        return (
+          keys.every((k) => ev.options[k] === combo[k]) &&
+          Object.keys(ev.options).length === keys.length
+        )
+      })
+
+      if (existing) {
+        return existing
+      }
+
+      return {
+        id: Math.random().toString(36).substring(2, 10),
+        options: combo,
+        stock: 5,
+        priceAdjustment: 0,
+      }
+    })
+  }
+
+  const handleSyncCombinations = () => {
+    const generated = generateCombinations(itemOptions, itemVariants)
+    setItemVariants(generated)
+  }
+
+  const handleUpdateVariantStock = (comboId: string, stock: number) => {
+    setItemVariants((prev) =>
+      prev.map((v) => (v.id === comboId ? { ...v, stock } : v))
+    )
+  }
+
+  const handleUpdateVariantPrice = (comboId: string, priceAdjustment: number) => {
+    setItemVariants((prev) =>
+      prev.map((v) => (v.id === comboId ? { ...v, priceAdjustment } : v))
+    )
+  }
+
+  const handleSetAllVariantsStock = (stock: number) => {
+    setItemVariants((prev) => prev.map((v) => ({ ...v, stock })))
+  }
+
+  // ── Option Group Builder Helpers ──────────────────────────────────────────
+  const generateId = () => Math.random().toString(36).substring(2, 10)
+
+  const handleAddOptionGroup = () => {
+    setItemOptions((prev) => [
+      ...prev,
+      {
+        id: generateId(),
+        name: "",
+        required: false,
+        values: [{ id: generateId(), label: "", priceAdjustment: 0 }],
+      },
+    ])
+  }
+
+  const handleRemoveOptionGroup = (groupIdx: number) => {
+    setItemOptions((prev) => prev.filter((_, i) => i !== groupIdx))
+  }
+
+  const handleUpdateGroupName = (groupIdx: number, name: string) => {
+    setItemOptions((prev) =>
+      prev.map((g, i) => (i === groupIdx ? { ...g, name } : g))
+    )
+  }
+
+  const handleToggleGroupRequired = (groupIdx: number) => {
+    setItemOptions((prev) =>
+      prev.map((g, i) => (i === groupIdx ? { ...g, required: !g.required } : g))
+    )
+  }
+
+  const handleAddOptionValue = (groupIdx: number) => {
+    setItemOptions((prev) =>
+      prev.map((g, i) =>
+        i === groupIdx
+          ? { ...g, values: [...g.values, { id: generateId(), label: "", priceAdjustment: 0 }] }
+          : g
+      )
+    )
+  }
+
+  const handleRemoveOptionValue = (groupIdx: number, valueIdx: number) => {
+    setItemOptions((prev) =>
+      prev.map((g, i) =>
+        i === groupIdx ? { ...g, values: g.values.filter((_, vi) => vi !== valueIdx) } : g
+      )
+    )
+  }
+
+  const handleUpdateOptionValue = (
+    groupIdx: number,
+    valueIdx: number,
+    field: keyof OptionValue,
+    value: string | number | undefined
+  ) => {
+    setItemOptions((prev) =>
+      prev.map((g, i) =>
+        i === groupIdx
+          ? {
+              ...g,
+              values: g.values.map((v, vi) =>
+                vi === valueIdx ? { ...v, [field]: value } : v
+              ),
+            }
+          : g
+      )
+    )
+  }
+
+  const handleUploadVariantImage = (groupIdx: number, valueIdx: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setVariantUploadTarget({ groupIdx, valueIdx })
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setCropperSrc(reader.result)
+        setCropperTarget("variant")
+        setIsCropperOpen(true)
+      }
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ""
+  }
 
   const [stores, setStores] = useState<Store[]>([])
   const [selectedStoreId, setSelectedStoreId] = useState<string>("")
@@ -160,6 +316,8 @@ export function SellerPortal({ user }: { user: User }) {
 
     if (target === "store") {
       setIsUploadingStoreImg(true)
+    } else if (target === "variant") {
+      setIsUploadingVariantImg(true)
     } else {
       setIsUploadingItemImg(true)
     }
@@ -169,6 +327,14 @@ export function SellerPortal({ user }: { user: User }) {
     if (url) {
       if (target === "store") {
         setStoreImage(url)
+      } else if (target === "variant" && variantUploadTarget) {
+        handleUpdateOptionValue(
+          variantUploadTarget.groupIdx,
+          variantUploadTarget.valueIdx,
+          "image",
+          url
+        )
+        setVariantUploadTarget(null)
       } else {
         setItemImage(url)
       }
@@ -180,6 +346,7 @@ export function SellerPortal({ user }: { user: User }) {
 
     setIsUploadingStoreImg(false)
     setIsUploadingItemImg(false)
+    setIsUploadingVariantImg(false)
   }
 
   // Load seller data from Supabase
@@ -330,6 +497,14 @@ export function SellerPortal({ user }: { user: User }) {
       setItemCalories(itemToEdit.calories || "")
       setItemPrepTime(itemToEdit.prepTime || "")
       setItemAvailable(itemToEdit.available)
+      setItemOptions(itemToEdit.options || [])
+      setItemVariants(
+        itemToEdit.variants && itemToEdit.variants.length > 0
+          ? itemToEdit.variants
+          : itemToEdit.options && itemToEdit.options.length > 0
+          ? generateCombinations(itemToEdit.options)
+          : []
+      )
     } else {
       setEditingItemId(null)
       setItemName("")
@@ -341,6 +516,8 @@ export function SellerPortal({ user }: { user: User }) {
       setItemCalories("550 kcal")
       setItemPrepTime("15 min")
       setItemAvailable(true)
+      setItemOptions([])
+      setItemVariants([])
     }
     setIsItemModalOpen(true)
   }
@@ -354,6 +531,25 @@ export function SellerPortal({ user }: { user: User }) {
       .map((t) => t.trim().toUpperCase())
       .filter(Boolean)
 
+    // Clean options: remove empty groups or values without labels
+    const cleanedOptions = itemOptions
+      .filter((g) => g.name.trim())
+      .map((g) => ({
+        ...g,
+        values: g.values.filter((v) => v.label.trim()),
+      }))
+      .filter((g) => g.values.length > 0)
+
+    const validVariants =
+      cleanedOptions.length > 0 && itemVariants.length > 0
+        ? itemVariants.filter((v) => {
+            return Object.entries(v.options).every(([grpName, valLabel]) => {
+              const grp = cleanedOptions.find((g) => g.name.trim() === grpName)
+              return grp && grp.values.some((val) => val.label.trim() === valLabel)
+            })
+          })
+        : undefined
+
     const saved = await saveMenuItem({
       id: editingItemId || undefined,
       storeId: selectedStoreId,
@@ -366,6 +562,8 @@ export function SellerPortal({ user }: { user: User }) {
       calories: itemCalories,
       prepTime: itemPrepTime,
       available: itemAvailable,
+      options: cleanedOptions.length > 0 ? cleanedOptions : undefined,
+      variants: validVariants && validVariants.length > 0 ? validVariants : undefined,
     })
 
     if (saved) {
@@ -1175,6 +1373,317 @@ export function SellerPortal({ user }: { user: User }) {
                 />
               </div>
 
+              {/* ── Option Groups / Variants Builder ───────────────────────── */}
+              <div className="border border-[#eef4ff] rounded-xl p-4 bg-[#f8f9ff]">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-bold text-[#0d1c2d]">🎨 Item Options / Variants</p>
+                    <p className="text-[10px] text-[#76777d]">
+                      Add dynamic options like Color, Size, Sugar Level, etc.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddOptionGroup}
+                    className="text-[11px] font-bold text-[#006c49] hover:text-[#005236] bg-white border border-[#ccdbf2] hover:border-[#006c49] px-3 py-1.5 rounded-lg transition-all"
+                  >
+                    + Add Option Group
+                  </button>
+                </div>
+
+                {itemOptions.length === 0 ? (
+                  <div className="text-center py-4 text-[10px] text-[#76777d] border border-dashed border-[#ccdbf2] rounded-lg bg-white">
+                    No options added. Click &quot;+ Add Option Group&quot; to create variants like Color, Size, or Cup Size.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {itemOptions.map((group, groupIdx) => (
+                      <div
+                        key={group.id}
+                        className="bg-white border border-[#eef4ff] rounded-xl p-3.5 shadow-xs"
+                      >
+                        {/* Group Header */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <input
+                            type="text"
+                            value={group.name}
+                            onChange={(e) => handleUpdateGroupName(groupIdx, e.target.value)}
+                            placeholder="Option name (e.g. Color, Size, Sugar Level)"
+                            className="flex-1 h-9 px-3 bg-[#f8f9ff] border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs font-semibold outline-none focus:border-[#006c49]"
+                          />
+                          <label className="flex items-center gap-1 text-[10px] text-[#76777d] whitespace-nowrap cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={group.required}
+                              onChange={() => handleToggleGroupRequired(groupIdx)}
+                              className="w-3.5 h-3.5 accent-[#006c49]"
+                            />
+                            Required
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveOptionGroup(groupIdx)}
+                            className="text-red-500 hover:text-red-700 text-xs font-bold px-1.5 py-0.5 rounded hover:bg-red-50 transition-all"
+                            title="Remove option group"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* Option Values */}
+                        <div className="space-y-2">
+                          {group.values.map((val, valueIdx) => (
+                            <div
+                              key={val.id}
+                              className="flex items-center gap-2 p-2 bg-[#f8f9ff] rounded-lg border border-[#eef4ff]"
+                            >
+                              {/* Variant image thumbnail */}
+                              <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-[#eef4ff] group/img cursor-pointer">
+                                {val.image ? (
+                                  <Image
+                                    src={val.image}
+                                    alt={val.label || "Variant"}
+                                    fill
+                                    sizes="36px"
+                                    className="object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-[10px] text-[#76777d]">
+                                    📷
+                                  </div>
+                                )}
+                                <label className="absolute inset-0 cursor-pointer opacity-0 group-hover/img:opacity-100 bg-black/40 flex items-center justify-center text-white text-[8px] font-bold transition-opacity">
+                                  {isUploadingVariantImg && variantUploadTarget?.groupIdx === groupIdx && variantUploadTarget?.valueIdx === valueIdx
+                                    ? "..."
+                                    : "📸"}
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => handleUploadVariantImage(groupIdx, valueIdx, e)}
+                                  />
+                                </label>
+                              </div>
+
+                              {/* Label input */}
+                              <input
+                                type="text"
+                                value={val.label}
+                                onChange={(e) =>
+                                  handleUpdateOptionValue(groupIdx, valueIdx, "label", e.target.value)
+                                }
+                                placeholder="Value (e.g. Red, Large, 50%)"
+                                className="flex-1 h-8 px-2.5 bg-white border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs outline-none focus:border-[#006c49] min-w-0"
+                              />
+
+                              {/* Price adjustment */}
+                              <div className="flex items-center gap-0.5 shrink-0" title="Price adjustment">
+                                <span className="text-[10px] text-[#76777d]">+$</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={val.priceAdjustment || ""}
+                                  onChange={(e) =>
+                                    handleUpdateOptionValue(
+                                      groupIdx,
+                                      valueIdx,
+                                      "priceAdjustment",
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  placeholder="0.00"
+                                  className="w-14 h-8 px-1.5 bg-white border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs outline-none focus:border-[#006c49] text-right"
+                                />
+                              </div>
+
+                              {/* Stock Qty */}
+                              <div className="flex items-center gap-0.5 shrink-0" title="Stock quantity (0 = Sold Out, blank = Unlimited)">
+                                <span className="text-[10px] text-[#76777d]">Qty:</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={val.stock !== undefined ? val.stock : ""}
+                                  onChange={(e) =>
+                                    handleUpdateOptionValue(
+                                      groupIdx,
+                                      valueIdx,
+                                      "stock",
+                                      e.target.value === "" ? undefined : parseInt(e.target.value, 10)
+                                    )
+                                  }
+                                  placeholder="∞"
+                                  className={`w-12 h-8 px-1 bg-white border rounded-lg text-xs outline-none focus:border-[#006c49] text-center font-medium ${
+                                    val.stock !== undefined && val.stock <= 0
+                                      ? "border-red-300 text-red-600 bg-red-50"
+                                      : "border-[#c6c6cd] text-[#0d1c2d]"
+                                  }`}
+                                />
+                              </div>
+
+                              {/* Remove value button */}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveOptionValue(groupIdx, valueIdx)}
+                                className="text-red-400 hover:text-red-600 text-[10px] font-bold px-1 rounded hover:bg-red-50 transition-all shrink-0"
+                                title="Remove value"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Add Value Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleAddOptionValue(groupIdx)}
+                          className="mt-2 text-[11px] font-semibold text-[#006c49] hover:text-[#005236] flex items-center gap-1"
+                        >
+                          <span>+</span> Add Value
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ── Multi-Attribute Variant Matrix (SKU Combinations) ── */}
+                {itemOptions.some((g) => g.name.trim() && g.values.some((v) => v.label.trim())) && (
+                  <div className="mt-4 pt-4 border-t border-[#eef4ff]">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                      <div>
+                        <p className="text-xs font-bold text-[#0d1c2d]">
+                          📊 SKU Combination Matrix & Stock
+                        </p>
+                        <p className="text-[10px] text-[#76777d]">
+                          Set stock amount for each combination (e.g. Red/S: 2, Red/XL: 0)
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={handleSyncCombinations}
+                          className="text-[10px] font-bold text-[#006c49] bg-white border border-[#ccdbf2] hover:border-[#006c49] px-2.5 py-1 rounded-lg transition-all"
+                          title="Generate or sync all combinations"
+                        >
+                          ⚡ Generate / Sync
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSetAllVariantsStock(10)}
+                          className="text-[10px] font-semibold text-[#0d1c2d] bg-white border border-[#ccdbf2] hover:bg-slate-50 px-2 py-1 rounded-lg transition-all"
+                        >
+                          All: 10
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSetAllVariantsStock(0)}
+                          className="text-[10px] font-semibold text-red-600 bg-white border border-red-200 hover:bg-red-50 px-2 py-1 rounded-lg transition-all"
+                        >
+                          All: 0
+                        </button>
+                      </div>
+                    </div>
+
+                    {itemVariants.length === 0 ? (
+                      <div className="text-center py-3 bg-white rounded-lg border border-dashed border-[#ccdbf2]">
+                        <button
+                          type="button"
+                          onClick={handleSyncCombinations}
+                          className="text-xs font-bold text-[#006c49] hover:underline"
+                        >
+                          Click to Generate Combination Matrix ({itemOptions.length} option groups)
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                        {itemVariants.map((variant) => {
+                          const isOutOfStock = variant.stock <= 0
+                          const comboText = Object.entries(variant.options)
+                            .map(([k, v]) => `${k}: ${v}`)
+                            .join(" · ")
+
+                          return (
+                            <div
+                              key={variant.id}
+                              className={`flex items-center justify-between p-2.5 rounded-xl border transition-all text-xs ${
+                                isOutOfStock
+                                  ? "bg-red-50/40 border-red-200"
+                                  : "bg-white border-[#eef4ff] hover:border-[#ccdbf2]"
+                              }`}
+                            >
+                              {/* Combination tags */}
+                              <div className="min-w-0 flex-1 pr-2">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {Object.entries(variant.options).map(([k, v]) => (
+                                    <span
+                                      key={k}
+                                      className="text-[10px] font-bold bg-[#eef4ff] text-[#00714d] px-2 py-0.5 rounded-md"
+                                    >
+                                      {k}: {v}
+                                    </span>
+                                  ))}
+                                  {isOutOfStock ? (
+                                    <span className="text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                                      No Stock
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                                      In Stock
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Price Adjustment & Stock Qty */}
+                              <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex items-center gap-1" title="Price adjustment for this SKU">
+                                  <span className="text-[10px] text-[#76777d]">+$</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={variant.priceAdjustment || ""}
+                                    onChange={(e) =>
+                                      handleUpdateVariantPrice(
+                                        variant.id,
+                                        parseFloat(e.target.value) || 0
+                                      )
+                                    }
+                                    placeholder="0.00"
+                                    className="w-14 h-7 px-1.5 bg-white border border-[#c6c6cd] rounded-lg text-xs outline-none focus:border-[#006c49] text-right"
+                                  />
+                                </div>
+
+                                <div className="flex items-center gap-1" title="Stock quantity for this SKU (0 = No Stock)">
+                                  <span className="text-[10px] text-[#76777d] font-semibold">Stock:</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={variant.stock}
+                                    onChange={(e) =>
+                                      handleUpdateVariantStock(
+                                        variant.id,
+                                        Math.max(0, parseInt(e.target.value, 10) || 0)
+                                      )
+                                    }
+                                    className={`w-14 h-7 px-1.5 bg-white border rounded-lg text-xs font-bold text-center outline-none focus:border-[#006c49] ${
+                                      isOutOfStock
+                                        ? "border-red-300 text-red-600 bg-red-50"
+                                        : "border-[#c6c6cd] text-[#0d1c2d]"
+                                    }`}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
@@ -1216,6 +1725,8 @@ export function SellerPortal({ user }: { user: User }) {
         title={
           cropperTarget === "store"
             ? "Crop Store Cover (1:1 Square)"
+            : cropperTarget === "variant"
+            ? "Crop Variant Image (1:1 Square)"
             : "Crop Product Photo (1:1 Square)"
         }
         onClose={() => {

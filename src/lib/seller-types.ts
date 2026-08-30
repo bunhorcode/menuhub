@@ -13,6 +13,31 @@ export type StoreCategoryType =
   | "General Retail"
   | string
 
+// ── Dynamic Product Variant / Option Types ───────────────────────────────────
+export interface OptionValue {
+  id: string
+  label: string          // e.g. "Red", "Large", "50%"
+  priceAdjustment: number // e.g. +2.00, 0, -1.00
+  image?: string         // optional variant-specific image URL
+  stock?: number         // stock inventory count: e.g. 5, 0 (0 = out of stock/disabled), undefined = unlimited
+}
+
+export interface OptionGroup {
+  id: string
+  name: string           // e.g. "Color", "Size", "Sugar Level"
+  required: boolean      // must the customer pick one?
+  values: OptionValue[]
+}
+
+// ── Multi-Attribute Variant Combination (SKU Matrix) ─────────────────────────
+export interface VariantCombination {
+  id: string
+  options: Record<string, string> // e.g. { "Color": "Red", "Size": "S" }
+  stock: number                   // stock quantity: e.g. 2, 0 (0 = No Stock)
+  priceAdjustment?: number        // e.g. +2.00
+  image?: string                  // variant combination image URL (optional)
+}
+
 export interface SellerProfile {
   id: string
   userId: string
@@ -53,5 +78,7 @@ export interface StoreMenuItem {
   calories?: string // Product specifications / size / weight / calories
   prepTime?: string // Fulfillment time / delivery / prep time
   available: boolean
+  options?: OptionGroup[] // Dynamic variant groups (Color, Size, Sugar Level, etc.)
+  variants?: VariantCombination[] // Multi-attribute combination matrix (e.g. Red/S = 2, Red/XL = 0)
   createdAt: string
 }

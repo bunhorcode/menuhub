@@ -6,11 +6,28 @@ import Link from "next/link"
 import { type User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 import { getStores, getMenuItems } from "@/lib/store-data"
-import { Store, StoreMenuItem } from "@/lib/seller-types"
+import { Store, StoreMenuItem, OptionValue } from "@/lib/seller-types"
+
+interface SelectedOption {
+  groupId: string
+  groupName: string
+  value: OptionValue
+}
 
 interface CartItem {
   item: StoreMenuItem
   quantity: number
+  selectedOptions?: SelectedOption[]
+}
+
+// Generate a unique cart key based on item ID + selected option values
+function cartKey(itemId: string, selectedOptions?: SelectedOption[]): string {
+  if (!selectedOptions || selectedOptions.length === 0) return itemId
+  const optKey = selectedOptions
+    .map((o) => `${o.groupId}:${o.value.id}`)
+    .sort()
+    .join("|")
+  return `${itemId}__${optKey}`
 }
 
 const CATEGORY_PILLS = [
@@ -38,6 +55,11 @@ export default function MenuHubScreen() {
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [supabaseStatus, setSupabaseStatus] = useState<string>("Checking...")
+
+  // Item detail modal state (for products with options/variants)
+  const [detailItem, setDetailItem] = useState<StoreMenuItem | null>(null)
+  const [detailSelectedOptions, setDetailSelectedOptions] = useState<SelectedOption[]>([])
+  const [detailDisplayImage, setDetailDisplayImage] = useState<string>("")
 
   // Load stores from Supabase
   useEffect(() => {
@@ -102,29 +124,188 @@ export default function MenuHubScreen() {
     })
   }, [stores, selectedCategoryPill, searchQuery])
 
-  // Cart helper actions
-  const handleAddToCart = (item: StoreMenuItem) => {
+  // Cart helper actions — variant-aware
+  const handleAddToCart = (item: StoreMenuItem, selectedOptions?: SelectedOption[]) => {
+    const key = cartKey(item.id, selectedOptions)
     setCart((prev) => {
-      const existing = prev.find((ci) => ci.item.id === item.id)
+      const existing = prev.find(
+        (ci) => cartKey(ci.item.id, ci.selectedOptions) === key
+      )
       if (existing) {
         return prev.map((ci) =>
-          ci.item.id === item.id ? { ...ci, quantity: ci.quantity + 1 } : ci
+          cartKey(ci.item.id, ci.selectedOptions) === key
+            ? { ...ci, quantity: ci.quantity + 1 }
+            : ci
         )
       }
-      return [...prev, { item, quantity: 1 }]
+      return [...prev, { item, quantity: 1, selectedOptions }]
     })
   }
 
-  const handleRemoveFromCart = (itemId: string) => {
+  const handleRemoveFromCart = (itemId: string, selectedOptions?: SelectedOption[]) => {
+    const key = cartKey(itemId, selectedOptions)
     setCart((prev) => {
-      const existing = prev.find((ci) => ci.item.id === itemId)
+      const existing = prev.find(
+        (ci) => cartKey(ci.item.id, ci.selectedOptions) === key
+      )
       if (existing && existing.quantity > 1) {
         return prev.map((ci) =>
-          ci.item.id === itemId ? { ...ci, quantity: ci.quantity - 1 } : ci
+          cartKey(ci.item.id, ci.selectedOptions) === key
+            ? { ...ci, quantity: ci.quantity - 1 }
+            : ci
         )
       }
-      return prev.filter((ci) => ci.item.id !== itemId)
+      return prev.filter(
+        (ci) => cartKey(ci.item.id, ci.selectedOptions) !== key
+      )
     })
+  }
+
+  // Helper to check if an option value is out of stock (multi-attribute combination aware)
+  const checkOptionOutOfStock = (
+    item: StoreMenuItem,
+    groupId: string,
+    groupName: string,
+    val: OptionValue,
+    currentSelections: SelectedOption[]
+  ): boolean => {
+    // If combinations matrix exists in item.variants
+    if (item.variants && item.variants.length > 0) {
+      const candidateCombo: Record<string, string> = {}
+      currentSelections.forEach((s) => {
+        if (s.groupId !== groupId) {
+          candidateCombo[s.groupName] = s.value.label
+        }
+      })
+      candidateCombo[groupName] = val.label
+
+      const matchingVariants = item.variants.filter((v) => {
+        return Object.entries(candidateCombo).every(([k, l]) => v.options[k] === l)
+      })
+
+      if (matchingVariants.length > 0) {
+        return matchingVariants.every((v) => v.stock <= 0)
+      }
+
+      const anyComboWithVal = item.variants.some(
+        (v) => v.options[groupName] === val.label && v.stock > 0
+      )
+      return !anyComboWithVal
+    }
+
+    // Fallback to option value stock if no matrix defined
+    return val.stock !== undefined && val.stock <= 0
+  }
+
+  // Compute price including option adjustments or SKU combo price
+  const computeItemPrice = (item: StoreMenuItem, selectedOptions?: SelectedOption[]): number => {
+    const base = item.price
+    if (!selectedOptions || selectedOptions.length === 0) return base
+
+    if (item.variants && item.variants.length > 0) {
+      const candidateCombo: Record<string, string> = {}
+      selectedOptions.forEach((s) => {
+        candidateCombo[s.groupName] = s.value.label
+      })
+      const matching = item.variants.find((v) =>
+        Object.entries(candidateCombo).every(([k, l]) => v.options[k] === l)
+      )
+      if (matching && matching.priceAdjustment !== undefined && matching.priceAdjustment !== 0) {
+        return base + matching.priceAdjustment
+      }
+    }
+
+    const adjustments = selectedOptions.reduce((sum, o) => sum + (o.value.priceAdjustment || 0), 0)
+    return base + adjustments
+  }
+
+  // Open item detail modal (for items with options)
+  const handleOpenItemDetail = (item: StoreMenuItem) => {
+    setDetailItem(item)
+    setDetailDisplayImage(item.image)
+    // Pre-select first in-stock value of each required group
+    const initialSelections: SelectedOption[] = []
+    if (item.options) {
+      item.options.forEach((group) => {
+        if (group.required && group.values.length > 0) {
+          const inStockValue =
+            group.values.find(
+              (v) => !checkOptionOutOfStock(item, group.id, group.name, v, initialSelections)
+            ) || group.values[0]
+          initialSelections.push({
+            groupId: group.id,
+            groupName: group.name,
+            value: inStockValue,
+          })
+        }
+      })
+    }
+    setDetailSelectedOptions(initialSelections)
+    // If first required option has an image, show it
+    if (initialSelections.length > 0 && initialSelections[0].value.image) {
+      setDetailDisplayImage(initialSelections[0].value.image)
+    }
+  }
+
+  const handleSelectOption = (groupId: string, groupName: string, value: OptionValue) => {
+    if (!detailItem) return
+    const isOut = checkOptionOutOfStock(detailItem, groupId, groupName, value, detailSelectedOptions)
+    if (isOut) return
+
+    const newSelections: SelectedOption[] = detailSelectedOptions
+      .filter((o) => o.groupId !== groupId)
+      .concat({ groupId, groupName, value })
+
+    // Auto-adjust other selected options if they became out-of-stock under this new selection
+    if (detailItem.options && detailItem.variants && detailItem.variants.length > 0) {
+      detailItem.options.forEach((otherGroup) => {
+        if (otherGroup.id !== groupId) {
+          const currentOther = newSelections.find((s) => s.groupId === otherGroup.id)
+          if (currentOther) {
+            const otherWithoutSelf = newSelections.filter((s) => s.groupId !== otherGroup.id)
+            const currentOtherOut = checkOptionOutOfStock(
+              detailItem,
+              otherGroup.id,
+              otherGroup.name,
+              currentOther.value,
+              otherWithoutSelf
+            )
+            if (currentOtherOut) {
+              const altVal = otherGroup.values.find(
+                (v) => !checkOptionOutOfStock(detailItem, otherGroup.id, otherGroup.name, v, otherWithoutSelf)
+              )
+              if (altVal) {
+                const idx = newSelections.findIndex((s) => s.groupId === otherGroup.id)
+                if (idx !== -1) {
+                  newSelections[idx] = { groupId: otherGroup.id, groupName: otherGroup.name, value: altVal }
+                }
+              }
+            }
+          }
+        }
+      })
+    }
+
+    setDetailSelectedOptions(newSelections)
+    // If this value has an image, swap the display image
+    if (value.image) {
+      setDetailDisplayImage(value.image)
+    }
+  }
+
+  const handleAddFromDetail = () => {
+    if (!detailItem) return
+    handleAddToCart(detailItem, detailSelectedOptions.length > 0 ? detailSelectedOptions : undefined)
+    setDetailItem(null)
+  }
+
+  // When clicking a product card, decide: open detail modal or add directly
+  const handleProductClick = (item: StoreMenuItem) => {
+    if (item.options && item.options.length > 0) {
+      handleOpenItemDetail(item)
+    } else {
+      handleAddToCart(item)
+    }
   }
 
   const handleSignOut = async () => {
@@ -135,7 +316,7 @@ export default function MenuHubScreen() {
 
   const totalItemCount = cart.reduce((sum, ci) => sum + ci.quantity, 0)
   const cartSubtotal = cart.reduce(
-    (sum, ci) => sum + ci.item.price * ci.quantity,
+    (sum, ci) => sum + computeItemPrice(ci.item, ci.selectedOptions) * ci.quantity,
     0
   )
 
@@ -447,10 +628,19 @@ export default function MenuHubScreen() {
                   <div className="p-2.5 sm:p-3 pt-0">
                     <button
                       disabled={!item.available}
-                      onClick={() => handleAddToCart(item)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleProductClick(item)
+                      }}
                       className="w-full bg-[#0d1c2d] hover:bg-[#131b2e] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 sm:py-2 rounded-lg flex items-center justify-center gap-1 transition-all"
                     >
-                      <span>{item.available ? "+ Add to Bag" : "Sold Out"}</span>
+                      <span>
+                        {!item.available
+                          ? "Sold Out"
+                          : item.options && item.options.length > 0
+                          ? "✨ Select Options"
+                          : "+ Add to Bag"}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -458,6 +648,201 @@ export default function MenuHubScreen() {
             )}
           </div>
         </main>
+      )}
+
+      {/* Item Detail / Variant Selection Modal */}
+      {detailItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white text-[#0d1c2d] rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-[#eef4ff] flex items-center justify-between sticky top-0 bg-white z-10">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#00714d] bg-[#eef4ff] px-2 py-0.5 rounded-full">
+                  {detailItem.category}
+                </span>
+                <h3 className="text-base sm:text-lg font-bold text-[#0d1c2d] mt-1">
+                  {detailItem.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setDetailItem(null)}
+                className="w-8 h-8 rounded-full bg-[#f8f9ff] hover:bg-[#eef4ff] text-[#76777d] hover:text-[#0d1c2d] flex items-center justify-center text-sm font-bold transition-all"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-6 space-y-5 flex-1">
+              {/* Active Image (Dynamic Swapping when Variant Selected) */}
+              <div className="relative aspect-square w-full max-h-64 rounded-xl bg-[#f4f7fc] overflow-hidden flex items-center justify-center border border-[#eef4ff]">
+                <Image
+                  src={detailDisplayImage || detailItem.image}
+                  alt={detailItem.name}
+                  fill
+                  sizes="(max-width: 640px) 100vw, 400px"
+                  className="object-contain p-2 transition-all duration-300"
+                />
+              </div>
+
+              {/* Description & Base Specs */}
+              <div>
+                <p className="text-xs text-[#76777d] leading-relaxed">
+                  {detailItem.description}
+                </p>
+                {detailItem.calories && (
+                  <p className="text-[11px] text-[#00714d] font-semibold mt-1">
+                    Specs: {detailItem.calories}
+                  </p>
+                )}
+              </div>
+
+              {/* Dynamic Option Groups */}
+              {detailItem.options && detailItem.options.length > 0 && (
+                <div className="space-y-4 pt-2 border-t border-[#eef4ff]">
+                  {detailItem.options.map((group) => {
+                    const currentSelection = detailSelectedOptions.find(
+                      (o) => o.groupId === group.id
+                    )
+
+                    return (
+                      <div key={group.id} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-[#0d1c2d] flex items-center gap-1.5">
+                            <span>{group.name}</span>
+                            {group.required && (
+                              <span className="text-[10px] font-normal text-red-500">* Required</span>
+                            )}
+                          </label>
+                          {currentSelection && (
+                            <span className="text-[11px] font-semibold text-[#00714d]">
+                              {currentSelection.value.label}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Values Selector Pills / Cards */}
+                        <div className="flex flex-wrap gap-2">
+                          {group.values.map((val) => {
+                            const isOutOfStock = checkOptionOutOfStock(
+                              detailItem,
+                              group.id,
+                              group.name,
+                              val,
+                              detailSelectedOptions
+                            )
+                            const isSelected = currentSelection?.value.id === val.id
+
+                            return (
+                              <button
+                                key={val.id}
+                                type="button"
+                                disabled={isOutOfStock}
+                                onClick={() =>
+                                  !isOutOfStock && handleSelectOption(group.id, group.name, val)
+                                }
+                                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
+                                  isOutOfStock
+                                    ? "border-slate-200 bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed line-through"
+                                    : isSelected
+                                    ? "border-[#006c49] bg-[#eef4ff] text-[#00714d] ring-2 ring-[#006c49]/20 font-bold shadow-xs scale-[1.02]"
+                                    : "border-[#e2e8f0] bg-white hover:border-[#cbd5e1] text-[#0d1c2d]"
+                                }`}
+                              >
+                                {/* Variant thumbnail if present */}
+                                {val.image && (
+                                  <div
+                                    className={`relative w-5 h-5 rounded-md overflow-hidden bg-slate-200 shrink-0 ${
+                                      isOutOfStock ? "grayscale opacity-50" : ""
+                                    }`}
+                                  >
+                                    <Image
+                                      src={val.image}
+                                      alt={val.label}
+                                      fill
+                                      sizes="20px"
+                                      className="object-cover"
+                                    />
+                                  </div>
+                                )}
+                                <span>{val.label}</span>
+                                {isOutOfStock ? (
+                                  <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1.5 py-0.5 rounded no-underline">
+                                    No Stock
+                                  </span>
+                                ) : (
+                                  <>
+                                    {val.priceAdjustment > 0 && (
+                                      <span className="text-[10px] text-[#006c49] font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
+                                        +${val.priceAdjustment.toFixed(2)}
+                                      </span>
+                                    )}
+                                    {val.priceAdjustment < 0 && (
+                                      <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded">
+                                        -${Math.abs(val.priceAdjustment).toFixed(2)}
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer / Add to Bag */}
+            <div className="p-4 sm:p-5 border-t border-[#eef4ff] bg-[#f8f9ff] flex items-center justify-between gap-4 sticky bottom-0">
+              <div>
+                <p className="text-[10px] text-[#76777d]">Total Price</p>
+                <p className="text-base sm:text-lg font-bold text-[#006c49]">
+                  ${computeItemPrice(detailItem, detailSelectedOptions).toFixed(2)}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={
+                  !detailItem.available ||
+                  detailSelectedOptions.some((o) =>
+                    checkOptionOutOfStock(
+                      detailItem,
+                      o.groupId,
+                      o.groupName,
+                      o.value,
+                      detailSelectedOptions.filter((s) => s.groupId !== o.groupId)
+                    )
+                  ) ||
+                  Boolean(
+                    detailItem.options?.some(
+                      (g) =>
+                        g.required &&
+                        !detailSelectedOptions.some(
+                          (o) =>
+                            o.groupId === g.id &&
+                            !checkOptionOutOfStock(
+                              detailItem,
+                              o.groupId,
+                              o.groupName,
+                              o.value,
+                              detailSelectedOptions.filter((s) => s.groupId !== o.groupId)
+                            )
+                        )
+                    )
+                  )
+                }
+                onClick={handleAddFromDetail}
+                className="bg-[#006c49] hover:bg-[#005236] disabled:opacity-40 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition-all flex items-center gap-2"
+              >
+                <span>+ Add to Bag</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Cart Drawer */}
@@ -475,43 +860,59 @@ export default function MenuHubScreen() {
                 </button>
               </div>
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 space-y-3 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
                 {cart.length === 0 ? (
                   <p className="text-sm text-[#76777d] text-center py-8">
                     Your order is empty
                   </p>
                 ) : (
-                  cart.map((ci) => (
-                    <div
-                      key={ci.item.id}
-                      className="flex items-center justify-between p-3 bg-[#f8f9ff] rounded-xl border border-[#eef4ff]"
-                    >
-                      <div>
-                        <p className="text-sm font-bold text-[#0d1c2d]">
-                          {ci.item.name}
-                        </p>
-                        <p className="text-xs text-[#76777d]">
-                          ${ci.item.price.toFixed(2)} x {ci.quantity}
-                        </p>
-                      </div>
+                  cart.map((ci) => {
+                    const itemTotalPrice = computeItemPrice(ci.item, ci.selectedOptions)
+                    return (
+                      <div
+                        key={cartKey(ci.item.id, ci.selectedOptions)}
+                        className="flex items-start justify-between p-3 bg-[#f8f9ff] rounded-xl border border-[#eef4ff] gap-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-[#0d1c2d] truncate">
+                            {ci.item.name}
+                          </p>
+                          {/* Display selected variants */}
+                          {ci.selectedOptions && ci.selectedOptions.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {ci.selectedOptions.map((opt) => (
+                                <span
+                                  key={opt.groupId}
+                                  className="text-[10px] bg-white border border-[#ccdbf2] text-[#00714d] px-1.5 py-0.5 rounded font-medium"
+                                >
+                                  {opt.groupName}: {opt.value.label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <p className="text-xs text-[#76777d] mt-1 font-semibold">
+                            ${itemTotalPrice.toFixed(2)} x {ci.quantity} = ${(itemTotalPrice * ci.quantity).toFixed(2)}
+                          </p>
+                        </div>
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleRemoveFromCart(ci.item.id)}
-                          className="w-6 h-6 rounded bg-white text-xs font-bold border border-[#c6c6cd]"
-                        >
-                          -
-                        </button>
-                        <span className="text-xs font-bold">{ci.quantity}</span>
-                        <button
-                          onClick={() => handleAddToCart(ci.item)}
-                          className="w-6 h-6 rounded bg-[#006c49] text-white text-xs font-bold"
-                        >
-                          +
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0 self-center">
+                          <button
+                            onClick={() => handleRemoveFromCart(ci.item.id, ci.selectedOptions)}
+                            className="w-6 h-6 rounded bg-white text-xs font-bold border border-[#c6c6cd] hover:bg-slate-50 flex items-center justify-center"
+                          >
+                            -
+                          </button>
+                          <span className="text-xs font-bold px-1">{ci.quantity}</span>
+                          <button
+                            onClick={() => handleAddToCart(ci.item, ci.selectedOptions)}
+                            className="w-6 h-6 rounded bg-[#006c49] text-white text-xs font-bold hover:bg-[#005236] flex items-center justify-center"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </div>
