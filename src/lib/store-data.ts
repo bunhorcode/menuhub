@@ -15,6 +15,7 @@ interface DbSellerRow {
   address: string
   cuisine_type: string
   bio: string | null
+  telegram_username: string | null
   status: "active" | "pending"
   created_at: string
 }
@@ -60,6 +61,7 @@ function mapDbSeller(row: DbSellerRow): SellerProfile {
     address: row.address,
     cuisineType: row.cuisine_type,
     bio: row.bio || undefined,
+    telegramUsername: row.telegram_username || undefined,
     status: row.status || "active",
     createdAt: row.created_at,
   }
@@ -151,6 +153,7 @@ export async function saveSellerProfile(profile: Omit<SellerProfile, "id" | "cre
       address: profile.address,
       cuisine_type: profile.cuisineType,
       bio: profile.bio || null,
+      telegram_username: profile.telegramUsername?.replace(/^@/, "") || null,
       status: profile.status || "active",
     }
     if (profile.id && !profile.id.startsWith("seller-")) {
@@ -169,6 +172,31 @@ export async function saveSellerProfile(profile: Omit<SellerProfile, "id" | "cre
     console.error("Supabase saveSellerProfile error:", error)
   } catch (e) {
     console.error("Supabase saveSellerProfile exception:", e)
+  }
+  return null
+}
+
+// ── 1b. Get seller profile by store ID (for storefront Telegram lookup) ──────
+export async function getSellerProfileByStoreId(storeId: string): Promise<SellerProfile | null> {
+  if (!storeId) return null
+  try {
+    const supabase = createClient()
+    // Join stores → sellers via seller_id / user_id
+    const { data: storeData, error: storeErr } = await supabase
+      .from("stores")
+      .select("seller_id")
+      .eq("id", storeId)
+      .maybeSingle()
+    if (storeErr || !storeData) return null
+
+    const { data, error } = await supabase
+      .from("sellers")
+      .select("*")
+      .eq("user_id", storeData.seller_id)
+      .maybeSingle()
+    if (!error && data) return mapDbSeller(data)
+  } catch (e) {
+    console.error("getSellerProfileByStoreId error:", e)
   }
   return null
 }

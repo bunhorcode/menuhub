@@ -5,7 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { type User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
-import { getStores, getMenuItems } from "@/lib/store-data"
+import { getStores, getMenuItems, getSellerProfileByStoreId } from "@/lib/store-data"
 import { Store, StoreMenuItem, OptionValue } from "@/lib/seller-types"
 
 interface SelectedOption {
@@ -63,6 +63,9 @@ export default function MenuHubScreen() {
   // Per-value quantities for the last option group (e.g. Size S: 2, Size M: 0, Size L: 1)
   const [detailValueQuantities, setDetailValueQuantities] = useState<Record<string, number>>({})
 
+  // Seller Telegram username for the active store (used for order notification button)
+  const [sellerTelegramUsername, setSellerTelegramUsername] = useState<string | null>(null)
+
   // Load stores from Supabase
   useEffect(() => {
     const loadStores = async () => {
@@ -72,18 +75,23 @@ export default function MenuHubScreen() {
     loadStores()
   }, [])
 
-  // When active restaurant changes, load its dishes from Supabase
+  // When active restaurant changes, load its dishes from Supabase + seller Telegram info
   useEffect(() => {
     const loadDishes = async () => {
       if (activeRestaurant) {
         const items = await getMenuItems(activeRestaurant.id)
         setStoreDishes(items)
+        // Fetch seller Telegram username for the order notification button
+        const sellerProfile = await getSellerProfileByStoreId(activeRestaurant.id)
+        setSellerTelegramUsername(sellerProfile?.telegramUsername || null)
       } else {
         setStoreDishes([])
+        setSellerTelegramUsername(null)
       }
     }
     loadDishes()
   }, [activeRestaurant])
+
 
   // Verify Supabase integration & load authenticated user
   useEffect(() => {
@@ -1019,33 +1027,85 @@ export default function MenuHubScreen() {
               })
 
               return (
-                <div className="p-4 sm:p-5 border-t border-[#eef4ff] bg-[#f8f9ff] flex items-center justify-between gap-4 sticky bottom-0">
-                  <div>
-                    <p className="text-[10px] text-[#76777d]">
-                      {totalQty > 0
-                        ? `Total (${totalQty} ${totalQty > 1 ? "items" : "item"})`
-                        : "Select quantities above"}
-                    </p>
-                    <p className="text-base sm:text-xl font-black text-[#006c49]">
-                      {totalQty > 0 ? `$${totalPrice.toFixed(2)}` : "$0.00"}
-                    </p>
-                  </div>
+                <div className="p-4 sm:p-5 border-t border-[#eef4ff] bg-[#f8f9ff] sticky bottom-0 space-y-3">
+                  {/* Price summary */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] text-[#76777d]">
+                        {totalQty > 0
+                          ? `Total (${totalQty} ${totalQty > 1 ? "items" : "item"})`
+                          : "Select quantities above"}
+                      </p>
+                      <p className="text-base sm:text-xl font-black text-[#006c49]">
+                        {totalQty > 0 ? `$${totalPrice.toFixed(2)}` : "$0.00"}
+                      </p>
+                    </div>
 
-                  <button
-                    type="button"
-                    disabled={totalQty <= 0 || !detailItem.available}
-                    onClick={handleAddFromDetail}
-                    className="bg-[#006c49] hover:bg-[#005236] disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 sm:px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5"
-                  >
-                    <span>
-                      {totalQty <= 0
-                        ? "Select Items"
-                        : `+ Add ${totalQty} to Bag · $${totalPrice.toFixed(2)}`}
-                    </span>
-                  </button>
+                    <div className="flex items-center gap-2">
+                      {/* Telegram Send Order button — only shown when seller has Telegram linked */}
+                      {sellerTelegramUsername && (
+                        <button
+                          type="button"
+                          title="Send order to seller via Telegram"
+                          disabled={totalQty <= 0}
+                          onClick={() => {
+                            // Build order summary lines
+                            const lines: string[] = []
+                            lastGroup.values.forEach((val) => {
+                              const qty = detailValueQuantities[val.id] || 0
+                              if (qty <= 0) return
+                              const fullSel: SelectedOption[] = [
+                                ...baseSelections,
+                                { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
+                              ]
+                              const linePrice = computeItemPrice(detailItem, fullSel) * qty
+                              const optionDesc = fullSel
+                                .map((o) => `${o.groupName}: ${o.value.label}`)
+                                .join(", ")
+                              lines.push(`• ${detailItem.name} | ${optionDesc} × ${qty} — $${linePrice.toFixed(2)}`)
+                            })
+                            const storeName = activeRestaurant?.name || "the store"
+                            const divider = "─────────────────"
+                            const message = [
+                              `🛍️ Order from ${storeName}`,
+                              divider,
+                              ...lines,
+                              divider,
+                              `Total: ${totalQty} ${totalQty > 1 ? "items" : "item"} — $${totalPrice.toFixed(2)}`,
+                            ].join("\n")
+                            const tgUsername = sellerTelegramUsername.replace(/^@/, "")
+                            window.open(
+                              `https://t.me/${tgUsername}?text=${encodeURIComponent(message)}`,
+                              "_blank"
+                            )
+                          }}
+                          className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#2196F3] hover:bg-[#1976d2] disabled:opacity-30 disabled:cursor-not-allowed text-white transition-all shadow-xs shrink-0"
+                        >
+                          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
+                            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                          </svg>
+                        </button>
+                      )}
+
+                      {/* Add to Bag button */}
+                      <button
+                        type="button"
+                        disabled={totalQty <= 0 || !detailItem.available}
+                        onClick={handleAddFromDetail}
+                        className="bg-[#006c49] hover:bg-[#005236] disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 sm:px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5"
+                      >
+                        <span>
+                          {totalQty <= 0
+                            ? "Select Items"
+                            : `+ Add ${totalQty} to Bag · $${totalPrice.toFixed(2)}`}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )
             })()}
+
           </div>
         </div>
       )}

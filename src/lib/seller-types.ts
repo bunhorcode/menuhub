@@ -49,6 +49,7 @@ export interface SellerProfile {
   address: string
   cuisineType: string // Store type / business specialty
   bio?: string
+  telegramUsername?: string  // e.g. "@mystore" or "mystore" — used for order notifications
   createdAt: string
   status: "active" | "pending"
 }

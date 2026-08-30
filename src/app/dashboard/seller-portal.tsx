@@ -276,6 +276,12 @@ export function SellerPortal({ user }: { user: User }) {
   const [regAddress, setRegAddress] = useState("")
   const [regCuisine, setRegCuisine] = useState("Clothing & Fashion")
   const [regBio, setRegBio] = useState("")
+  const [regTelegramUsername, setRegTelegramUsername] = useState("")
+
+  // Telegram settings for existing sellers
+  const [telegramEdit, setTelegramEdit] = useState("")
+  const [isTelegramEditing, setIsTelegramEditing] = useState(false)
+  const [isSavingTelegram, setIsSavingTelegram] = useState(false)
 
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null)
   const [storeName, setStoreName] = useState("")
@@ -408,6 +414,7 @@ export function SellerPortal({ user }: { user: User }) {
       address: regAddress,
       cuisineType: regCuisine,
       bio: regBio,
+      telegramUsername: regTelegramUsername || undefined,
       status: "active",
     })
 
@@ -744,6 +751,23 @@ export function SellerPortal({ user }: { user: User }) {
                   />
                 </div>
 
+                {/* Telegram Username */}
+                <div className="flex items-center gap-2.5 bg-[#f0f9ff] border border-[#bae6fd] rounded-xl px-4 py-3">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 text-[#2196F3] fill-current">
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                  </svg>
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-xs font-bold text-[#0d1c2d] mb-0.5">Telegram Username <span className="font-normal text-[#76777d]">(optional)</span></label>
+                    <input
+                      type="text"
+                      value={regTelegramUsername}
+                      onChange={(e) => setRegTelegramUsername(e.target.value)}
+                      placeholder="e.g. @mystore or mystore"
+                      className="w-full bg-transparent border-none outline-none text-xs text-[#0d1c2d] placeholder-[#94a3b8]"
+                    />
+                  </div>
+                </div>
+
                 <div className="pt-2 flex justify-end gap-2">
                   <button
                     type="button"
@@ -772,11 +796,11 @@ export function SellerPortal({ user }: { user: User }) {
     <div className="space-y-8 mb-8">
       {/* Seller Header Banner */}
       <div className="bg-white border border-[#eef4ff] rounded-2xl p-6 sm:p-8 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-[#00714d] border border-emerald-200 rounded-full text-xs font-semibold mb-2">
               <span>✓</span>
-              <span>Verified Restaurant Seller</span>
+              <span>Verified Seller</span>
             </div>
             <h2 className="text-2xl font-bold text-[#0d1c2d]">
               {profile.businessName} Studio
@@ -784,9 +808,70 @@ export function SellerPortal({ user }: { user: User }) {
             <p className="text-xs text-[#76777d] mt-1">
               Owner: <span className="font-semibold text-[#0d1c2d]">{profile.ownerName}</span> • Phone: {profile.phone} • Cuisine: {profile.cuisineType}
             </p>
+
+            {/* Telegram Section */}
+            <div className="mt-3">
+              {!isTelegramEditing ? (
+                <div className="flex items-center gap-2">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-[#2196F3] fill-current">
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                  </svg>
+                  {profile.telegramUsername ? (
+                    <span className="text-xs text-[#0d1c2d] font-semibold">@{profile.telegramUsername}</span>
+                  ) : (
+                    <span className="text-xs text-[#76777d] italic">No Telegram linked</span>
+                  )}
+                  <button
+                    onClick={() => {
+                      setTelegramEdit(profile.telegramUsername || "")
+                      setIsTelegramEditing(true)
+                    }}
+                    className="text-[10px] font-semibold text-[#006c49] hover:underline ml-1"
+                  >
+                    {profile.telegramUsername ? "Edit" : "+ Link Telegram"}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 bg-[#f0f9ff] border border-[#bae6fd] rounded-xl px-3 py-2 max-w-xs">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-[#2196F3] fill-current">
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                  </svg>
+                  <input
+                    type="text"
+                    value={telegramEdit}
+                    onChange={(e) => setTelegramEdit(e.target.value)}
+                    placeholder="@yourusername"
+                    className="flex-1 bg-transparent border-none outline-none text-xs text-[#0d1c2d]"
+                    autoFocus
+                  />
+                  <button
+                    disabled={isSavingTelegram}
+                    onClick={async () => {
+                      setIsSavingTelegram(true)
+                      const updated = await saveSellerProfile({
+                        ...profile,
+                        telegramUsername: telegramEdit || undefined,
+                      })
+                      if (updated) setProfile(updated)
+                      setIsTelegramEditing(false)
+                      setIsSavingTelegram(false)
+                    }}
+                    className="text-[10px] font-bold text-white bg-[#2196F3] hover:bg-[#1976d2] disabled:opacity-50 px-2 py-1 rounded-lg"
+                  >
+                    {isSavingTelegram ? "..." : "Save"}
+                  </button>
+                  <button
+                    onClick={() => setIsTelegramEditing(false)}
+                    className="text-[10px] text-[#76777d] hover:text-[#0d1c2d] font-semibold"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               onClick={() => handleOpenStoreModal()}
               className="bg-[#006c49] hover:bg-[#005236] text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5"
