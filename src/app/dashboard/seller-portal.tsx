@@ -15,8 +15,14 @@ import {
   saveMenuItem,
   deleteMenuItem,
   uploadStoreImage,
+  checkBarcodeAvailability,
+  generateUniqueBarcode,
 } from "@/lib/store-data"
 import { ImageCropperModal } from "./image-cropper-modal"
+import {
+  BarcodeScannerModal,
+  BarcodeVisualPreview,
+} from "./barcode-scanner-modal"
 
 const SAMPLE_IMAGES = [
   { name: "Fashion & Apparel", url: "/images/bistro_delight.jpg" },
@@ -302,6 +308,36 @@ export function SellerPortal({ user }: { user: User }) {
   const [itemCalories, setItemCalories] = useState("Sizes: S, M, L, XL")
   const [itemPrepTime, setItemPrepTime] = useState("Same-Day Dispatch")
   const [itemAvailable, setItemAvailable] = useState(true)
+  const [itemBarcode, setItemBarcode] = useState("")
+  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false)
+  const [barcodeCopied, setBarcodeCopied] = useState(false)
+  const [barcodeStatus, setBarcodeStatus] = useState<{
+    isChecking: boolean
+    isUnique: boolean
+    conflictName?: string
+  } | null>(null)
+  const [isGeneratingBarcode, setIsGeneratingBarcode] = useState(false)
+
+  // Real-time debounced database barcode uniqueness check
+  useEffect(() => {
+    const clean = itemBarcode.trim()
+    if (!clean) {
+      setBarcodeStatus(null)
+      return
+    }
+
+    setBarcodeStatus({ isChecking: true, isUnique: true })
+    const timer = setTimeout(async () => {
+      const result = await checkBarcodeAvailability(clean, editingItemId || undefined)
+      setBarcodeStatus({
+        isChecking: false,
+        isUnique: result.isUnique,
+        conflictName: result.existingItemName,
+      })
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [itemBarcode, editingItemId])
 
   const handleUploadProductImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -523,6 +559,8 @@ export function SellerPortal({ user }: { user: User }) {
       setItemCalories(itemToEdit.calories || "")
       setItemPrepTime(itemToEdit.prepTime || "")
       setItemAvailable(itemToEdit.available)
+      setItemBarcode(itemToEdit.barcode || "")
+      setBarcodeStatus(null)
       setItemOptions(itemToEdit.options || [])
       setItemVariants(
         itemToEdit.variants && itemToEdit.variants.length > 0
@@ -542,6 +580,8 @@ export function SellerPortal({ user }: { user: User }) {
       setItemCalories("550 kcal")
       setItemPrepTime("15 min")
       setItemAvailable(true)
+      setItemBarcode("")
+      setBarcodeStatus(null)
       setItemOptions([])
       setItemVariants([])
     }
@@ -552,6 +592,19 @@ export function SellerPortal({ user }: { user: User }) {
     e.preventDefault()
     if (!selectedStoreId) return
     setIsSaving(true)
+
+    // Pre-save database barcode uniqueness validation
+    if (itemBarcode.trim()) {
+      const check = await checkBarcodeAvailability(itemBarcode.trim(), editingItemId || undefined)
+      if (!check.isUnique) {
+        alert(
+          `Cannot save: Barcode "${itemBarcode.trim()}" is already assigned to "${check.existingItemName || "another item"}". Please use a unique barcode.`
+        )
+        setIsSaving(false)
+        return
+      }
+    }
+
     const tagsArray = itemTags
       .split(",")
       .map((t) => t.trim().toUpperCase())
@@ -588,6 +641,7 @@ export function SellerPortal({ user }: { user: User }) {
       calories: itemCalories,
       prepTime: itemPrepTime,
       available: itemAvailable,
+      barcode: itemBarcode.trim() || undefined,
       options: cleanedOptions.length > 0 ? cleanedOptions : undefined,
       variants: validVariants && validVariants.length > 0 ? validVariants : undefined,
     })
@@ -1068,6 +1122,11 @@ export function SellerPortal({ user }: { user: User }) {
 
                       {item.options && item.options.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
+                          {item.barcode && (
+                            <span className="text-[9px] font-mono bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded font-bold">
+                              🏷️ {item.barcode}
+                            </span>
+                          )}
                           <span className="text-[9px] bg-[#eef4ff] text-[#00714d] px-1.5 py-0.5 rounded font-bold">
                             {item.options.length} {item.options.length > 1 ? "options" : "option"}
                           </span>
@@ -1076,6 +1135,14 @@ export function SellerPortal({ user }: { user: User }) {
                               {item.variants.length} SKUs
                             </span>
                           )}
+                        </div>
+                      )}
+
+                      {!item.options?.length && item.barcode && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          <span className="text-[9px] font-mono bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded font-bold">
+                            🏷️ {item.barcode}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -1404,6 +1471,131 @@ export function SellerPortal({ user }: { user: User }) {
                   placeholder="BESTSELLER, NEW ARRIVAL, 100% ORGANIC"
                   className="w-full h-10 px-3.5 bg-white border border-[#c6c6cd] rounded-xl text-[#0d1c2d]"
                 />
+              </div>
+
+              {/* Barcode / SKU Code Section with Database Uniqueness Validation */}
+              <div className="bg-[#f8f9ff] border border-[#eef4ff] rounded-2xl p-3.5 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-[#0d1c2d] flex items-center gap-1.5">
+                      <span>🏷️ Barcode / SKU Code</span>
+                      <span className="text-[10px] font-normal text-[#76777d]">(Must be unique)</span>
+                    </label>
+                    <p className="text-[10px] text-[#76777d]">Input manual, auto-generate, or scan with camera</p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={isGeneratingBarcode}
+                      onClick={async () => {
+                        setIsGeneratingBarcode(true)
+                        const uniqueCode = await generateUniqueBarcode("200")
+                        setItemBarcode(uniqueCode)
+                        setIsGeneratingBarcode(false)
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#eef4ff] hover:bg-[#dbe9ff] disabled:opacity-50 text-[#00714d] text-[11px] font-bold border border-[#ccdbf2] transition-all flex items-center gap-1 shadow-2xs"
+                      title="Auto-generate guaranteed unique barcode verified with database"
+                    >
+                      <span>{isGeneratingBarcode ? "⏳ Generating..." : "⚡ Auto Generate"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsBarcodeScannerOpen(true)}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#006c49] hover:bg-[#005236] text-white text-[11px] font-bold shadow-xs transition-all flex items-center gap-1"
+                      title="Scan barcode with device camera or image"
+                    >
+                      <span>📷 Scan Barcode</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={itemBarcode}
+                    onChange={(e) => setItemBarcode(e.target.value)}
+                    placeholder="e.g. 200849201934 or TSHIRT-RED-S"
+                    className={`w-full h-10 px-3.5 pr-20 rounded-xl text-xs font-mono outline-none transition-all border ${
+                      barcodeStatus && !barcodeStatus.isChecking && !barcodeStatus.isUnique
+                        ? "border-red-500 bg-red-50/40 text-red-900 focus:border-red-600 ring-2 ring-red-200"
+                        : barcodeStatus && !barcodeStatus.isChecking && barcodeStatus.isUnique
+                        ? "border-emerald-500 bg-emerald-50/20 text-[#0d1c2d] focus:border-[#006c49]"
+                        : "border-[#c6c6cd] bg-white text-[#0d1c2d] focus:border-[#006c49]"
+                    }`}
+                  />
+                  {itemBarcode && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(itemBarcode)
+                          setBarcodeCopied(true)
+                          setTimeout(() => setBarcodeCopied(false), 1500)
+                        }}
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        title="Copy barcode"
+                      >
+                        {barcodeCopied ? "✓ Copied" : "Copy"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setItemBarcode("")}
+                        className="text-xs text-slate-400 hover:text-slate-700 px-1"
+                        title="Clear barcode"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Real-time Database Uniqueness Status Message */}
+                {barcodeStatus && itemBarcode.trim() && (
+                  <div>
+                    {barcodeStatus.isChecking ? (
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <span className="inline-block animate-spin">⏳</span>
+                        <span>Checking database for uniqueness...</span>
+                      </div>
+                    ) : barcodeStatus.isUnique ? (
+                      <div className="flex items-center gap-1.5 text-[11px] text-[#00714d] font-bold">
+                        <span>✓</span>
+                        <span>Unique Barcode: Available in Database</span>
+                      </div>
+                    ) : (
+                      <div className="p-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span>⚠️</span>
+                          <span>
+                            Duplicate Barcode: Already assigned to{" "}
+                            <strong>"{barcodeStatus.conflictName || "another item"}"</strong>
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setIsGeneratingBarcode(true)
+                            const uniqueCode = await generateUniqueBarcode("200")
+                            setItemBarcode(uniqueCode)
+                            setIsGeneratingBarcode(false)
+                          }}
+                          className="text-[10px] bg-red-600 hover:bg-red-700 text-white font-bold px-2 py-0.5 rounded-lg whitespace-nowrap"
+                        >
+                          Fix with Auto-Generate
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Visual SVG Barcode Preview */}
+                {itemBarcode.trim() && barcodeStatus?.isUnique !== false && (
+                  <div className="pt-1 flex items-center justify-center">
+                    <BarcodeVisualPreview barcode={itemBarcode.trim()} />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1881,8 +2073,8 @@ export function SellerPortal({ user }: { user: User }) {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSaving}
-                  className="bg-[#006c49] hover:bg-[#005236] disabled:opacity-50 text-white px-5 py-2 rounded-xl font-bold"
+                  disabled={isSaving || barcodeStatus?.isChecking || barcodeStatus?.isUnique === false}
+                  className="bg-[#006c49] hover:bg-[#005236] disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2 rounded-xl font-bold transition-all shadow-xs"
                 >
                   {isSaving ? "Saving..." : "Save Item"}
                 </button>
@@ -1909,8 +2101,18 @@ export function SellerPortal({ user }: { user: User }) {
         }}
         onCropComplete={handleCropComplete}
       />
+
+      {/* Barcode / SKU Camera Scanner Modal */}
+      <BarcodeScannerModal
+        isOpen={isBarcodeScannerOpen}
+        onClose={() => setIsBarcodeScannerOpen(false)}
+        onScan={(scannedCode) => {
+          setItemBarcode(scannedCode)
+        }}
+      />
     </div>
   )
 }
+
 
 

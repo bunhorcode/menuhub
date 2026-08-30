@@ -47,6 +47,7 @@ interface DbMenuItemRow {
   calories: string | null
   prep_time: string | null
   available: boolean
+  barcode?: string | null
   options: OptionGroup[] | null
   created_at: string
 }
@@ -116,6 +117,7 @@ function mapDbMenuItem(row: DbMenuItemRow): StoreMenuItem {
     calories: row.calories || undefined,
     prepTime: row.prep_time || undefined,
     available: row.available ?? true,
+    barcode: row.barcode || undefined,
     options: parsedOptions,
     variants: parsedVariants,
     createdAt: row.created_at,
@@ -312,6 +314,7 @@ export async function saveMenuItem(item: Omit<StoreMenuItem, "id" | "createdAt">
       calories: item.calories || null,
       prep_time: item.prepTime || null,
       available: item.available ?? true,
+      barcode: item.barcode || null,
       options: optionsPayload,
     }
     if (item.id && !item.id.startsWith("item-")) {
@@ -343,6 +346,65 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
     console.error("Supabase deleteMenuItem exception:", e)
     return false
   }
+}
+
+// ── 3b. Barcode Uniqueness Validation ────────────────────────────────────────
+export async function checkBarcodeAvailability(
+  barcode: string,
+  excludeItemId?: string
+): Promise<{ isUnique: boolean; existingItemName?: string }> {
+  const clean = barcode.trim()
+  if (!clean) return { isUnique: true }
+
+  try {
+    const supabase = createClient()
+    let query = supabase
+      .from("menu_items")
+      .select("id, name, barcode")
+      .eq("barcode", clean)
+
+    if (excludeItemId && !excludeItemId.startsWith("item-")) {
+      query = query.neq("id", excludeItemId)
+    }
+
+    const { data, error } = await query
+
+    if (!error && data && data.length > 0) {
+      const collision = data.find((d) => d.id !== excludeItemId)
+      if (collision) {
+        return { isUnique: false, existingItemName: collision.name }
+      }
+    }
+  } catch (e) {
+    console.error("checkBarcodeAvailability exception:", e)
+  }
+
+  return { isUnique: true }
+}
+
+export async function generateUniqueBarcode(prefix = "200"): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    // Generate 12-digit EAN-13 formatted string with valid check digit
+    let code = prefix
+    while (code.length < 11) {
+      code += Math.floor(Math.random() * 10).toString()
+    }
+    let sum = 0
+    for (let i = 0; i < code.length; i++) {
+      const digit = parseInt(code[i], 10)
+      sum += i % 2 === 0 ? digit : digit * 3
+    }
+    const checkDigit = (10 - (sum % 10)) % 10
+    const candidate = code + checkDigit.toString()
+
+    const { isUnique } = await checkBarcodeAvailability(candidate)
+    if (isUnique) {
+      return candidate
+    }
+  }
+  // Fallback with timestamp
+  const ts = Date.now().toString().slice(-8)
+  return `${prefix}${ts}`
 }
 
 // ── 4. Supabase Storage Image Upload ─────────────────────────────────────────
