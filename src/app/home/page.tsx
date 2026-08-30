@@ -60,6 +60,8 @@ export default function MenuHubScreen() {
   const [detailItem, setDetailItem] = useState<StoreMenuItem | null>(null)
   const [detailSelectedOptions, setDetailSelectedOptions] = useState<SelectedOption[]>([])
   const [detailDisplayImage, setDetailDisplayImage] = useState<string>("")
+  // Per-value quantities for the last option group (e.g. Size S: 2, Size M: 0, Size L: 1)
+  const [detailValueQuantities, setDetailValueQuantities] = useState<Record<string, number>>({})
 
   // Load stores from Supabase
   useEffect(() => {
@@ -124,8 +126,8 @@ export default function MenuHubScreen() {
     })
   }, [stores, selectedCategoryPill, searchQuery])
 
-  // Cart helper actions — variant-aware
-  const handleAddToCart = (item: StoreMenuItem, selectedOptions?: SelectedOption[]) => {
+  // Cart helper actions — variant-aware with dynamic amount
+  const handleAddToCart = (item: StoreMenuItem, selectedOptions?: SelectedOption[], quantity = 1) => {
     const key = cartKey(item.id, selectedOptions)
     setCart((prev) => {
       const existing = prev.find(
@@ -134,11 +136,18 @@ export default function MenuHubScreen() {
       if (existing) {
         return prev.map((ci) =>
           cartKey(ci.item.id, ci.selectedOptions) === key
-            ? { ...ci, quantity: ci.quantity + 1 }
+            ? { ...ci, quantity: ci.quantity + quantity }
             : ci
         )
       }
-      return [...prev, { item, quantity: 1, selectedOptions }]
+      return [
+        ...prev,
+        {
+          item,
+          quantity,
+          selectedOptions: selectedOptions && selectedOptions.length > 0 ? selectedOptions : undefined,
+        },
+      ]
     })
   }
 
@@ -197,7 +206,7 @@ export default function MenuHubScreen() {
     return val.stock !== undefined && val.stock <= 0
   }
 
-  // Compute price including option adjustments or SKU combo price
+  // Compute price including option adjustments or SKU combo Sell Price
   const computeItemPrice = (item: StoreMenuItem, selectedOptions?: SelectedOption[]): number => {
     const base = item.price
     if (!selectedOptions || selectedOptions.length === 0) return base
@@ -205,16 +214,42 @@ export default function MenuHubScreen() {
     if (item.variants && item.variants.length > 0) {
       const candidateCombo: Record<string, string> = {}
       selectedOptions.forEach((s) => {
-        candidateCombo[s.groupName] = s.value.label
+        candidateCombo[s.groupName.trim()] = s.value.label.trim()
       })
-      const matching = item.variants.find((v) =>
-        Object.entries(candidateCombo).every(([k, l]) => v.options[k] === l)
-      )
-      if (matching && matching.sellPrice !== undefined && matching.sellPrice > 0) {
-        return matching.sellPrice
+
+      // 1. Try to find exact match for all selected options
+      const exactMatch = item.variants.find((v) => {
+        const vEntries = Object.entries(v.options)
+        const cEntries = Object.entries(candidateCombo)
+        const allCandidatesMatch = cEntries.every(
+          ([k, l]) => v.options[k]?.trim().toLowerCase() === l?.trim().toLowerCase()
+        )
+        return allCandidatesMatch && vEntries.length === cEntries.length
+      })
+
+      if (exactMatch) {
+        if (exactMatch.sellPrice !== undefined && exactMatch.sellPrice > 0) {
+          return exactMatch.sellPrice
+        }
+        if (exactMatch.priceAdjustment !== undefined && exactMatch.priceAdjustment !== 0) {
+          return base + exactMatch.priceAdjustment
+        }
       }
-      if (matching && matching.priceAdjustment !== undefined && matching.priceAdjustment !== 0) {
-        return base + matching.priceAdjustment
+
+      // 2. Try partial match if not all option groups selected yet
+      const partialMatch = item.variants.find((v) => {
+        return Object.entries(candidateCombo).every(
+          ([k, l]) => v.options[k]?.trim().toLowerCase() === l?.trim().toLowerCase()
+        )
+      })
+
+      if (partialMatch) {
+        if (partialMatch.sellPrice !== undefined && partialMatch.sellPrice > 0) {
+          return partialMatch.sellPrice
+        }
+        if (partialMatch.priceAdjustment !== undefined && partialMatch.priceAdjustment !== 0) {
+          return base + partialMatch.priceAdjustment
+        }
       }
     }
 
@@ -222,14 +257,41 @@ export default function MenuHubScreen() {
     return base + adjustments
   }
 
+  // Helper to find the stock amount of the selected SKU combination
+  const getSelectedSkuStock = (item: StoreMenuItem, selectedOptions?: SelectedOption[]): number | undefined => {
+    if (!item.variants || item.variants.length === 0) return undefined
+    if (!selectedOptions || selectedOptions.length === 0) return undefined
+    const candidateCombo: Record<string, string> = {}
+    selectedOptions.forEach((s) => {
+      candidateCombo[s.groupName.trim()] = s.value.label.trim()
+    })
+    const matching =
+      item.variants.find((v) => {
+        const vEntries = Object.entries(v.options)
+        const cEntries = Object.entries(candidateCombo)
+        const allMatch = cEntries.every(
+          ([k, l]) => v.options[k]?.trim().toLowerCase() === l?.trim().toLowerCase()
+        )
+        return allMatch && vEntries.length === cEntries.length
+      }) ||
+      item.variants.find((v) => {
+        return Object.entries(candidateCombo).every(
+          ([k, l]) => v.options[k]?.trim().toLowerCase() === l?.trim().toLowerCase()
+        )
+      })
+    return matching?.stock
+  }
+
   // Open item detail modal (for items with options)
   const handleOpenItemDetail = (item: StoreMenuItem) => {
     setDetailItem(item)
     setDetailDisplayImage(item.image)
-    // Pre-select first in-stock value of each required group
+    setDetailValueQuantities({})
+    // Pre-select first in-stock value of each non-last required group (last group uses qty rows)
     const initialSelections: SelectedOption[] = []
-    if (item.options) {
-      item.options.forEach((group) => {
+    if (item.options && item.options.length > 0) {
+      const groupsExceptLast = item.options.slice(0, -1)
+      groupsExceptLast.forEach((group) => {
         if (group.required && group.values.length > 0) {
           const inStockValue =
             group.values.find(
@@ -297,9 +359,26 @@ export default function MenuHubScreen() {
   }
 
   const handleAddFromDetail = () => {
-    if (!detailItem) return
-    handleAddToCart(detailItem, detailSelectedOptions.length > 0 ? detailSelectedOptions : undefined)
-    setDetailItem(null)
+    if (!detailItem || !detailItem.options || detailItem.options.length === 0) return
+    const lastGroup = detailItem.options[detailItem.options.length - 1]
+    const baseSelections = detailSelectedOptions.filter((o) => o.groupId !== lastGroup.id)
+    let addedAny = false
+
+    lastGroup.values.forEach((val) => {
+      const qty = detailValueQuantities[val.id] || 0
+      if (qty <= 0) return
+      const fullSelections: SelectedOption[] = [
+        ...baseSelections,
+        { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
+      ]
+      handleAddToCart(detailItem, fullSelections, qty)
+      addedAny = true
+    })
+
+    if (addedAny) {
+      setDetailItem(null)
+      setIsCartOpen(true)
+    }
   }
 
   // When clicking a product card, decide: open detail modal or add directly
@@ -618,7 +697,23 @@ export default function MenuHubScreen() {
                       {/* Price & Variant Specs */}
                       <div className="mt-1.5 flex items-baseline justify-between gap-1 flex-wrap">
                         <span className="font-bold text-sm sm:text-base text-[#006c49]">
-                          ${item.price.toFixed(2)}
+                          {item.variants && item.variants.length > 0 ? (
+                            (() => {
+                              const prices = item.variants
+                                .map((v) =>
+                                  v.sellPrice !== undefined && v.sellPrice > 0
+                                    ? v.sellPrice
+                                    : item.price + (v.priceAdjustment || 0)
+                                )
+                                .filter((p) => p > 0)
+                              if (prices.length === 0) return `$${item.price.toFixed(2)}`
+                              const min = Math.min(...prices)
+                              const max = Math.max(...prices)
+                              return min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`
+                            })()
+                          ) : (
+                            `$${item.price.toFixed(2)}`
+                          )}
                         </span>
                         {item.calories && (
                           <span className="text-[9px] sm:text-[10px] text-[#76777d] bg-[#f8f9ff] px-1.5 py-0.5 rounded border border-[#eef4ff] truncate max-w-[90px]">
@@ -661,17 +756,40 @@ export default function MenuHubScreen() {
           <div className="bg-white text-[#0d1c2d] rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-[#eef4ff] flex items-center justify-between sticky top-0 bg-white z-10">
-              <div>
+              <div className="min-w-0 flex-1 pr-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#00714d] bg-[#eef4ff] px-2 py-0.5 rounded-full">
                   {detailItem.category}
                 </span>
-                <h3 className="text-base sm:text-lg font-bold text-[#0d1c2d] mt-1">
-                  {detailItem.name}
-                </h3>
+                <div className="flex items-baseline justify-between gap-2 mt-1">
+                  <h3 className="text-base sm:text-lg font-bold text-[#0d1c2d] truncate">
+                    {detailItem.name}
+                  </h3>
+                  <span className="text-base sm:text-lg font-black text-[#006c49] shrink-0">
+                    {(() => {
+                      if (!detailItem.options || detailItem.options.length === 0) return `$${detailItem.price.toFixed(2)}`
+                      const lastGroup = detailItem.options[detailItem.options.length - 1]
+                      const baseSelections = detailSelectedOptions.filter((o) => o.groupId !== lastGroup.id)
+                      let total = 0
+                      let anyQty = false
+                      lastGroup.values.forEach((val) => {
+                        const qty = detailValueQuantities[val.id] || 0
+                        if (qty > 0) {
+                          anyQty = true
+                          const fullSel: SelectedOption[] = [
+                            ...baseSelections,
+                            { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
+                          ]
+                          total += computeItemPrice(detailItem, fullSel) * qty
+                        }
+                      })
+                      return anyQty ? `$${total.toFixed(2)}` : `$${detailItem.price.toFixed(2)}`
+                    })()}
+                  </span>
+                </div>
               </div>
               <button
                 onClick={() => setDetailItem(null)}
-                className="w-8 h-8 rounded-full bg-[#f8f9ff] hover:bg-[#eef4ff] text-[#76777d] hover:text-[#0d1c2d] flex items-center justify-center text-sm font-bold transition-all"
+                className="w-8 h-8 rounded-full bg-[#f8f9ff] hover:bg-[#eef4ff] text-[#76777d] hover:text-[#0d1c2d] flex items-center justify-center text-sm font-bold transition-all shrink-0"
               >
                 ✕
               </button>
@@ -704,149 +822,230 @@ export default function MenuHubScreen() {
               </div>
 
               {/* Dynamic Option Groups */}
-              {detailItem.options && detailItem.options.length > 0 && (
-                <div className="space-y-4 pt-2 border-t border-[#eef4ff]">
-                  {detailItem.options.map((group) => {
-                    const currentSelection = detailSelectedOptions.find(
-                      (o) => o.groupId === group.id
-                    )
+              {detailItem.options && detailItem.options.length > 0 && (() => {
+                const lastGroup = detailItem.options[detailItem.options.length - 1]
+                const pillGroups = detailItem.options.slice(0, -1)
 
-                    return (
-                      <div key={group.id} className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-bold text-[#0d1c2d] flex items-center gap-1.5">
-                            <span>{group.name}</span>
-                            {group.required && (
-                              <span className="text-[10px] font-normal text-red-500">* Required</span>
+                return (
+                  <div className="space-y-4 pt-2 border-t border-[#eef4ff]">
+                    {/* ── Pill-based groups (all groups except the last) ── */}
+                    {pillGroups.map((group) => {
+                      const currentSelection = detailSelectedOptions.find(
+                        (o) => o.groupId === group.id
+                      )
+                      return (
+                        <div key={group.id} className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-[#0d1c2d] flex items-center gap-1.5">
+                              <span>{group.name}</span>
+                              {group.required && (
+                                <span className="text-[10px] font-normal text-red-500">* Required</span>
+                              )}
+                            </label>
+                            {currentSelection && (
+                              <span className="text-[11px] font-semibold text-[#00714d]">
+                                {currentSelection.value.label}
+                              </span>
                             )}
-                          </label>
-                          {currentSelection && (
-                            <span className="text-[11px] font-semibold text-[#00714d]">
-                              {currentSelection.value.label}
-                            </span>
-                          )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {group.values.map((val) => {
+                              const isOutOfStock = checkOptionOutOfStock(
+                                detailItem, group.id, group.name, val, detailSelectedOptions
+                              )
+                              const isSelected = currentSelection?.value.id === val.id
+                              return (
+                                <button
+                                  key={val.id}
+                                  type="button"
+                                  disabled={isOutOfStock}
+                                  onClick={() =>
+                                    !isOutOfStock && handleSelectOption(group.id, group.name, val)
+                                  }
+                                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
+                                    isOutOfStock
+                                      ? "border-slate-200 bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed line-through"
+                                      : isSelected
+                                      ? "border-[#006c49] bg-[#eef4ff] text-[#00714d] ring-2 ring-[#006c49]/20 font-bold shadow-xs scale-[1.02]"
+                                      : "border-[#e2e8f0] bg-white hover:border-[#cbd5e1] text-[#0d1c2d]"
+                                  }`}
+                                >
+                                  {val.image && (
+                                    <div className={`relative w-5 h-5 rounded-md overflow-hidden bg-slate-200 shrink-0 ${isOutOfStock ? "grayscale opacity-50" : ""}`}>
+                                      <Image src={val.image} alt={val.label} fill sizes="20px" className="object-cover" />
+                                    </div>
+                                  )}
+                                  <span>{val.label}</span>
+                                  {isOutOfStock && (
+                                    <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1.5 py-0.5 rounded no-underline">No Stock</span>
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
                         </div>
+                      )
+                    })}
 
-                        {/* Values Selector Pills / Cards */}
-                        <div className="flex flex-wrap gap-2">
-                          {group.values.map((val) => {
-                            const isOutOfStock = checkOptionOutOfStock(
-                              detailItem,
-                              group.id,
-                              group.name,
-                              val,
-                              detailSelectedOptions
-                            )
-                            const isSelected = currentSelection?.value.id === val.id
+                    {/* ── Last group: Quantity rows with [- qty +] per value ── */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-[#0d1c2d] flex items-center gap-1.5">
+                        <span>{lastGroup.name}</span>
+                        <span className="text-[10px] font-normal text-[#76777d]">— set quantity per option</span>
+                      </label>
 
-                            return (
-                              <button
-                                key={val.id}
-                                type="button"
-                                disabled={isOutOfStock}
-                                onClick={() =>
-                                  !isOutOfStock && handleSelectOption(group.id, group.name, val)
-                                }
-                                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
-                                  isOutOfStock
-                                    ? "border-slate-200 bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed line-through"
-                                    : isSelected
-                                    ? "border-[#006c49] bg-[#eef4ff] text-[#00714d] ring-2 ring-[#006c49]/20 font-bold shadow-xs scale-[1.02]"
-                                    : "border-[#e2e8f0] bg-white hover:border-[#cbd5e1] text-[#0d1c2d]"
-                                }`}
-                              >
-                                {/* Variant thumbnail if present */}
-                                {val.image && (
-                                  <div
-                                    className={`relative w-5 h-5 rounded-md overflow-hidden bg-slate-200 shrink-0 ${
-                                      isOutOfStock ? "grayscale opacity-50" : ""
-                                    }`}
-                                  >
-                                    <Image
-                                      src={val.image}
-                                      alt={val.label}
-                                      fill
-                                      sizes="20px"
-                                      className="object-cover"
-                                    />
+                      <div className="divide-y divide-[#eef4ff] border border-[#eef4ff] rounded-xl overflow-hidden">
+                        {lastGroup.values.map((val) => {
+                          // Build a full candidate with this value to check stock
+                          const baseSelections = detailSelectedOptions.filter((o) => o.groupId !== lastGroup.id)
+                          const candidateSelections: SelectedOption[] = [
+                            ...baseSelections,
+                            { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
+                          ]
+                          const skuStock = getSelectedSkuStock(detailItem, candidateSelections)
+                          const isOutOfStock = skuStock !== undefined && skuStock <= 0
+                          const qty = detailValueQuantities[val.id] || 0
+                          const maxQty = skuStock !== undefined ? skuStock : 999
+
+                          // Compute SKU sell price for this combination
+                          const skuPrice = computeItemPrice(detailItem, candidateSelections)
+
+                          return (
+                            <div
+                              key={val.id}
+                              className={`flex items-center justify-between px-3.5 py-3 gap-3 transition-all ${
+                                isOutOfStock
+                                  ? "bg-slate-50/50 opacity-60"
+                                  : qty > 0
+                                  ? "bg-[#eef4ff]/40"
+                                  : "bg-white hover:bg-[#f8f9ff]"
+                              }`}
+                            >
+                              {/* Left: Value info */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  {val.image && (
+                                    <div className={`relative w-7 h-7 rounded-lg overflow-hidden bg-slate-200 shrink-0 ${isOutOfStock ? "grayscale" : ""}`}>
+                                      <Image src={val.image} alt={val.label} fill sizes="28px" className="object-cover" />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className={`text-xs font-bold leading-tight truncate ${
+                                      isOutOfStock ? "text-slate-400 line-through" : "text-[#0d1c2d]"
+                                    }`}>
+                                      {val.label}
+                                    </p>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      {isOutOfStock ? (
+                                        <span className="text-[10px] text-red-500 font-bold">No Stock</span>
+                                      ) : (
+                                        <>
+                                          <span className="text-[10px] text-[#006c49] font-bold">${skuPrice.toFixed(2)}</span>
+                                          {skuStock !== undefined && (
+                                            <span className="text-[10px] text-[#76777d]">
+                                              · {skuStock > 0 ? `${skuStock} in stock` : ""}
+                                            </span>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
                                   </div>
-                                )}
-                                <span>{val.label}</span>
-                                {isOutOfStock ? (
-                                  <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1.5 py-0.5 rounded no-underline">
-                                    No Stock
-                                  </span>
-                                ) : (
-                                  <>
-                                    {val.priceAdjustment > 0 && (
-                                      <span className="text-[10px] text-[#006c49] font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
-                                        +${val.priceAdjustment.toFixed(2)}
-                                      </span>
-                                    )}
-                                    {val.priceAdjustment < 0 && (
-                                      <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded">
-                                        -${Math.abs(val.priceAdjustment).toFixed(2)}
-                                      </span>
-                                    )}
-                                  </>
-                                )}
-                              </button>
-                            )
-                          })}
-                        </div>
+                                </div>
+                              </div>
+
+                              {/* Right: Quantity stepper [- qty +] */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={isOutOfStock || qty <= 0}
+                                  onClick={() => {
+                                    setDetailValueQuantities((prev) => ({
+                                      ...prev,
+                                      [val.id]: Math.max(0, (prev[val.id] || 0) - 1),
+                                    }))
+                                  }}
+                                  className="w-8 h-8 rounded-lg bg-white border border-[#ccdbf2] text-xs font-bold text-[#0d1c2d] hover:bg-slate-50 disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center transition-all"
+                                >
+                                  −
+                                </button>
+                                <span className={`w-7 text-center text-xs font-bold tabular-nums ${
+                                  qty > 0 ? "text-[#006c49]" : "text-[#76777d]"
+                                }`}>
+                                  {qty}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={isOutOfStock || qty >= maxQty}
+                                  onClick={() => {
+                                    setDetailValueQuantities((prev) => ({
+                                      ...prev,
+                                      [val.id]: Math.min(maxQty, (prev[val.id] || 0) + 1),
+                                    }))
+                                  }}
+                                  className="w-8 h-8 rounded-lg bg-[#006c49] text-white text-xs font-bold hover:bg-[#005236] disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center transition-all"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
-                    )
-                  })}
-                </div>
-              )}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
             {/* Modal Footer / Add to Bag */}
-            <div className="p-4 sm:p-5 border-t border-[#eef4ff] bg-[#f8f9ff] flex items-center justify-between gap-4 sticky bottom-0">
-              <div>
-                <p className="text-[10px] text-[#76777d]">Total Price</p>
-                <p className="text-base sm:text-lg font-bold text-[#006c49]">
-                  ${computeItemPrice(detailItem, detailSelectedOptions).toFixed(2)}
-                </p>
-              </div>
+            {(() => {
+              if (!detailItem.options || detailItem.options.length === 0) return null
+              const lastGroup = detailItem.options[detailItem.options.length - 1]
+              const baseSelections = detailSelectedOptions.filter((o) => o.groupId !== lastGroup.id)
 
-              <button
-                type="button"
-                disabled={
-                  !detailItem.available ||
-                  detailSelectedOptions.some((o) =>
-                    checkOptionOutOfStock(
-                      detailItem,
-                      o.groupId,
-                      o.groupName,
-                      o.value,
-                      detailSelectedOptions.filter((s) => s.groupId !== o.groupId)
-                    )
-                  ) ||
-                  Boolean(
-                    detailItem.options?.some(
-                      (g) =>
-                        g.required &&
-                        !detailSelectedOptions.some(
-                          (o) =>
-                            o.groupId === g.id &&
-                            !checkOptionOutOfStock(
-                              detailItem,
-                              o.groupId,
-                              o.groupName,
-                              o.value,
-                              detailSelectedOptions.filter((s) => s.groupId !== o.groupId)
-                            )
-                        )
-                    )
-                  )
+              // Compute total quantity and price across all value rows
+              let totalQty = 0
+              let totalPrice = 0
+              lastGroup.values.forEach((val) => {
+                const qty = detailValueQuantities[val.id] || 0
+                if (qty > 0) {
+                  const fullSel: SelectedOption[] = [
+                    ...baseSelections,
+                    { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
+                  ]
+                  totalQty += qty
+                  totalPrice += computeItemPrice(detailItem, fullSel) * qty
                 }
-                onClick={handleAddFromDetail}
-                className="bg-[#006c49] hover:bg-[#005236] disabled:opacity-40 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition-all flex items-center gap-2"
-              >
-                <span>+ Add to Bag</span>
-              </button>
-            </div>
+              })
+
+              return (
+                <div className="p-4 sm:p-5 border-t border-[#eef4ff] bg-[#f8f9ff] flex items-center justify-between gap-4 sticky bottom-0">
+                  <div>
+                    <p className="text-[10px] text-[#76777d]">
+                      {totalQty > 0
+                        ? `Total (${totalQty} ${totalQty > 1 ? "items" : "item"})`
+                        : "Select quantities above"}
+                    </p>
+                    <p className="text-base sm:text-xl font-black text-[#006c49]">
+                      {totalQty > 0 ? `$${totalPrice.toFixed(2)}` : "$0.00"}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={totalQty <= 0 || !detailItem.available}
+                    onClick={handleAddFromDetail}
+                    className="bg-[#006c49] hover:bg-[#005236] disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 sm:px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5"
+                  >
+                    <span>
+                      {totalQty <= 0
+                        ? "Select Items"
+                        : `+ Add ${totalQty} to Bag · $${totalPrice.toFixed(2)}`}
+                    </span>
+                  </button>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
