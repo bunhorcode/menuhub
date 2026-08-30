@@ -256,8 +256,8 @@ export default function MenuHubScreen() {
                     key={pill.name}
                     onClick={() => setSelectedCategoryPill(pill.name)}
                     className={`px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all ${isActive
-                        ? "bg-[#006c49] text-white shadow-xs"
-                        : "bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#0d1c2d]"
+                      ? "bg-[#006c49] text-white shadow-xs"
+                      : "bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#0d1c2d]"
                       }`}
                   >
                     <span>{pill.icon}</span>
@@ -304,13 +304,13 @@ export default function MenuHubScreen() {
                     />
 
                     {/* Category Badge */}
-                    <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md flex items-center gap-1 text-[10px] font-bold shadow-xs">
+                    <div className="absolute top-2.5 left-2.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md flex items-center gap-1 text-[10px] font-bold shadow-xs">
                       <span>{rest.badgeIcon}</span>
                       <span className="text-[#0d1c2d] hidden sm:inline">{rest.category}</span>
                     </div>
 
                     {/* Rating */}
-                    <div className="absolute bottom-1.5 right-1.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md text-[10px] font-bold text-[#0d1c2d] shadow-xs flex items-center gap-0.5">
+                    <div className="absolute bottom-2.5 right-2.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md text-[10px] font-bold text-[#0d1c2d] shadow-xs flex items-center gap-0.5">
                       <span className="text-[#006c49]">★</span>
                       <span>{rest.rating}</span>
                     </div>
