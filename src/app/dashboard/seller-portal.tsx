@@ -172,11 +172,6 @@ export function SellerPortal({ user }: { user: User }) {
     )
   }
 
-  const handleUpdateVariantPrice = (comboId: string, priceAdjustment: number) => {
-    setItemVariants((prev) =>
-      prev.map((v) => (v.id === comboId ? { ...v, priceAdjustment } : v))
-    )
-  }
 
   const handleSetAllVariantsStock = (stock: number) => {
     setItemVariants((prev) => prev.map((v) => ({ ...v, stock })))
@@ -321,13 +316,12 @@ export function SellerPortal({ user }: { user: User }) {
   // Real-time debounced database barcode uniqueness check
   useEffect(() => {
     const clean = itemBarcode.trim()
-    if (!clean) {
-      setBarcodeStatus(null)
-      return
-    }
-
-    setBarcodeStatus({ isChecking: true, isUnique: true })
     const timer = setTimeout(async () => {
+      if (!clean) {
+        setBarcodeStatus(null)
+        return
+      }
+      setBarcodeStatus({ isChecking: true, isUnique: true })
       const result = await checkBarcodeAvailability(clean, editingItemId || undefined)
       setBarcodeStatus({
         isChecking: false,
@@ -1570,7 +1564,7 @@ export function SellerPortal({ user }: { user: User }) {
                           <span>⚠️</span>
                           <span>
                             Duplicate Barcode: Already assigned to{" "}
-                            <strong>"{barcodeStatus.conflictName || "another item"}"</strong>
+                            <strong>&quot;{barcodeStatus.conflictName || "another item"}&quot;</strong>
                           </span>
                         </div>
                         <button

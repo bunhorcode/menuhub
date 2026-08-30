@@ -291,7 +291,7 @@ export async function saveMenuItem(item: Omit<StoreMenuItem, "id" | "createdAt">
   try {
     const supabase = createClient()
     // Store options and multi-attribute variant matrix cleanly in options column
-    let optionsPayload: any = null
+    let optionsPayload: OptionGroup[] | { groups: OptionGroup[]; variants: VariantCombination[] } | null = null
     if (item.options && item.options.length > 0) {
       if (item.variants && item.variants.length > 0) {
         optionsPayload = {
@@ -303,7 +303,7 @@ export async function saveMenuItem(item: Omit<StoreMenuItem, "id" | "createdAt">
       }
     }
 
-    const payload: any = {
+    const payload: Record<string, string | number | boolean | string[] | null | OptionGroup[] | { groups: OptionGroup[]; variants: VariantCombination[] }> = {
       store_id: item.storeId,
       name: item.name,
       category: item.category,

@@ -45,7 +45,6 @@ function cartKey(itemId: string, selectedOptions?: SelectedOption[]): string {
   return `${itemId}__${getComboKey(selectedOptions)}`
 }
 
-const CART_STORAGE_KEY = "menuhub_cart_storage_v2"
 
 const CATEGORY_PILLS = [
   { name: "All", icon: "🎯" },
@@ -88,57 +87,60 @@ export default function MenuHubScreen() {
   // - Registered MenuHub Users: Permanent storage in localStorage keyed by user ID
   // - Guest Users (No Account): Temporary session storage only (cleared when session/browser ends)
   useEffect(() => {
-    try {
-      if (user) {
-        // Authenticated user: load from permanent account storage
-        const userStorageKey = `menuhub_cart_user_${user.id}`
-        const saved = localStorage.getItem(userStorageKey)
-        if (saved) {
-          const parsed: CartItem[] = JSON.parse(saved)
-          if (Array.isArray(parsed)) {
-            setCart(
-              parsed.map((ci) => ({
-                ...ci,
-                selectedForOrder: ci.selectedForOrder ?? true,
-              }))
-            )
-          }
-        } else {
-          // If user had guest items before logging in, transfer them to permanent account storage
-          const guestSaved = sessionStorage.getItem("menuhub_guest_cart")
-          if (guestSaved) {
-            const guestParsed: CartItem[] = JSON.parse(guestSaved)
-            if (Array.isArray(guestParsed) && guestParsed.length > 0) {
+    const loadCart = async () => {
+      try {
+        if (user) {
+          // Authenticated user: load from permanent account storage
+          const userStorageKey = `menuhub_cart_user_${user.id}`
+          const saved = localStorage.getItem(userStorageKey)
+          if (saved) {
+            const parsed: CartItem[] = JSON.parse(saved)
+            if (Array.isArray(parsed)) {
               setCart(
-                guestParsed.map((ci) => ({
+                parsed.map((ci) => ({
                   ...ci,
                   selectedForOrder: ci.selectedForOrder ?? true,
                 }))
               )
-              sessionStorage.removeItem("menuhub_guest_cart")
+            }
+          } else {
+            // If user had guest items before logging in, transfer them to permanent account storage
+            const guestSaved = sessionStorage.getItem("menuhub_guest_cart")
+            if (guestSaved) {
+              const guestParsed: CartItem[] = JSON.parse(guestSaved)
+              if (Array.isArray(guestParsed) && guestParsed.length > 0) {
+                setCart(
+                  guestParsed.map((ci) => ({
+                    ...ci,
+                    selectedForOrder: ci.selectedForOrder ?? true,
+                  }))
+                )
+                sessionStorage.removeItem("menuhub_guest_cart")
+              }
+            }
+          }
+        } else {
+          // Guest user (no account): load temporary session bag only
+          const guestSaved = sessionStorage.getItem("menuhub_guest_cart")
+          if (guestSaved) {
+            const parsed: CartItem[] = JSON.parse(guestSaved)
+            if (Array.isArray(parsed)) {
+              setCart(
+                parsed.map((ci) => ({
+                  ...ci,
+                  selectedForOrder: ci.selectedForOrder ?? true,
+                }))
+              )
             }
           }
         }
-      } else {
-        // Guest user (no account): load temporary session bag only
-        const guestSaved = sessionStorage.getItem("menuhub_guest_cart")
-        if (guestSaved) {
-          const parsed: CartItem[] = JSON.parse(guestSaved)
-          if (Array.isArray(parsed)) {
-            setCart(
-              parsed.map((ci) => ({
-                ...ci,
-                selectedForOrder: ci.selectedForOrder ?? true,
-              }))
-            )
-          }
-        }
+      } catch (e) {
+        console.warn("Could not load cart", e)
+      } finally {
+        setIsCartHydrated(true)
       }
-    } catch (e) {
-      console.warn("Could not load cart", e)
-    } finally {
-      setIsCartHydrated(true)
     }
+    loadCart()
   }, [user])
 
   // 2. Auto-save: Permanent in localStorage for registered accounts, session-only for guests

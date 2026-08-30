@@ -213,15 +213,28 @@ export function BarcodeScannerModal({
   }
 
   useEffect(() => {
-    if (isOpen) {
-      startCamera()
-    } else {
-      stopCamera()
+    if (!isOpen) return
+
+    let active = true
+    const init = async () => {
+      if (active) {
+        await startCamera()
+      }
     }
+    init().catch(console.error)
+
     return () => {
-      stopCamera()
+      active = false
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+        animationFrameRef.current = null
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
     }
-  }, [isOpen, startCamera, stopCamera])
+  }, [isOpen, startCamera])
 
   if (!isOpen) return null
 
