@@ -1108,13 +1108,14 @@ export default function MenuHubScreen() {
                           title="Send order to seller via Telegram"
                           disabled={totalQty <= 0}
                           onClick={() => {
-                            // Build order summary lines across all selected combinations
+                            // Build order summary lines across all selected combinations including barcode
                             const lines = selectedEntries.map((entry) => {
                               const linePrice = computeItemPrice(detailItem, entry.selections) * entry.quantity
                               const optionDesc = entry.selections
                                 .map((o) => `${o.groupName}: ${o.value.label}`)
                                 .join(", ")
-                              return `• ${detailItem.name} | ${optionDesc} × ${entry.quantity} — $${linePrice.toFixed(2)}`
+                              const barcodeText = detailItem.barcode ? ` [Barcode: ${detailItem.barcode}]` : ""
+                              return `• ${detailItem.name}${barcodeText} | ${optionDesc} × ${entry.quantity} — $${linePrice.toFixed(2)}`
                             })
                             const storeName = activeRestaurant?.name || "the store"
                             const divider = "─────────────────"
@@ -1194,6 +1195,11 @@ export default function MenuHubScreen() {
                           <p className="text-sm font-bold text-[#0d1c2d] truncate">
                             {ci.item.name}
                           </p>
+                          {ci.item.barcode && (
+                            <span className="text-[9px] font-mono text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded inline-block mt-0.5 font-bold">
+                              🏷️ {ci.item.barcode}
+                            </span>
+                          )}
                           {/* Display selected variants */}
                           {ci.selectedOptions && ci.selectedOptions.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1">
@@ -1235,21 +1241,62 @@ export default function MenuHubScreen() {
             </div>
 
             {cart.length > 0 && (
-              <div className="pt-4 border-t border-[#eef4ff]">
-                <div className="flex justify-between text-base font-bold text-[#0d1c2d] mb-4">
+              <div className="pt-4 border-t border-[#eef4ff] space-y-3">
+                <div className="flex justify-between text-base font-bold text-[#0d1c2d]">
                   <span>Subtotal</span>
                   <span className="text-[#006c49]">${cartSubtotal.toFixed(2)}</span>
                 </div>
-                <button
-                  onClick={() => {
-                    alert("Order / Bag submitted successfully!")
-                    setCart([])
-                    setIsCartOpen(false)
-                  }}
-                  className="w-full bg-[#006c49] text-white py-3.5 rounded-xl font-semibold text-sm hover:bg-[#005236] transition-all"
-                >
-                  Checkout & Place Order
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {sellerTelegramUsername && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const lines = cart.map((ci) => {
+                          const itemTotalPrice = computeItemPrice(ci.item, ci.selectedOptions) * ci.quantity
+                          const optionDesc =
+                            ci.selectedOptions && ci.selectedOptions.length > 0
+                              ? " | " + ci.selectedOptions.map((o) => `${o.groupName}: ${o.value.label}`).join(", ")
+                              : ""
+                          const barcodeText = ci.item.barcode ? ` [Barcode: ${ci.item.barcode}]` : ""
+                          return `• ${ci.item.name}${barcodeText}${optionDesc} × ${ci.quantity} — $${itemTotalPrice.toFixed(2)}`
+                        })
+                        const storeName = activeRestaurant?.name || "the store"
+                        const totalCount = cart.reduce((sum, ci) => sum + ci.quantity, 0)
+                        const divider = "─────────────────"
+                        const message = [
+                          `🛍️ Order from ${storeName}`,
+                          divider,
+                          ...lines,
+                          divider,
+                          `Total: ${totalCount} ${totalCount > 1 ? "items" : "item"} — $${cartSubtotal.toFixed(2)}`,
+                        ].join("\n")
+                        const tgUsername = sellerTelegramUsername.replace(/^@/, "")
+                        window.open(
+                          `https://t.me/${tgUsername}?text=${encodeURIComponent(message)}`,
+                          "_blank"
+                        )
+                      }}
+                      className="w-12 h-12 rounded-xl flex items-center justify-center bg-[#2196F3] hover:bg-[#1976d2] text-white shadow-xs shrink-0 transition-all"
+                      title="Send full cart order to seller via Telegram"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
+                        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                      </svg>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      alert("Order / Bag submitted successfully!")
+                      setCart([])
+                      setIsCartOpen(false)
+                    }}
+                    className="flex-1 bg-[#006c49] text-white py-3.5 rounded-xl font-semibold text-sm hover:bg-[#005236] transition-all shadow-xs"
+                  >
+                    Checkout & Place Order
+                  </button>
+                </div>
               </div>
             )}
           </div>
