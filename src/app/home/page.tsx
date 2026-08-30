@@ -28,9 +28,15 @@ function getComboKey(options: SelectedOption[]): string {
 }
 
 interface CartItem {
+  id: string
   item: StoreMenuItem
   quantity: number
   selectedOptions?: SelectedOption[]
+  selectedImage?: string
+  storeId?: string
+  storeName?: string
+  selectedForOrder: boolean
+  createdAt: number
 }
 
 // Generate a unique cart key based on item ID + selected option values
@@ -38,6 +44,8 @@ function cartKey(itemId: string, selectedOptions?: SelectedOption[]): string {
   if (!selectedOptions || selectedOptions.length === 0) return itemId
   return `${itemId}__${getComboKey(selectedOptions)}`
 }
+
+const CART_STORAGE_KEY = "menuhub_cart_storage_v2"
 
 const CATEGORY_PILLS = [
   { name: "All", icon: "🎯" },
@@ -62,6 +70,7 @@ export default function MenuHubScreen() {
   const [storeDishes, setStoreDishes] = useState<StoreMenuItem[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
   const [isCartOpen, setIsCartOpen] = useState(false)
+  const [isCartHydrated, setIsCartHydrated] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [supabaseStatus, setSupabaseStatus] = useState<string>("Checking...")
 
@@ -74,6 +83,81 @@ export default function MenuHubScreen() {
 
   // Seller Telegram username for the active store (used for order notification button)
   const [sellerTelegramUsername, setSellerTelegramUsername] = useState<string | null>(null)
+
+  // 1. Cart Hydration & Persistence:
+  // - Registered MenuHub Users: Permanent storage in localStorage keyed by user ID
+  // - Guest Users (No Account): Temporary session storage only (cleared when session/browser ends)
+  useEffect(() => {
+    try {
+      if (user) {
+        // Authenticated user: load from permanent account storage
+        const userStorageKey = `menuhub_cart_user_${user.id}`
+        const saved = localStorage.getItem(userStorageKey)
+        if (saved) {
+          const parsed: CartItem[] = JSON.parse(saved)
+          if (Array.isArray(parsed)) {
+            setCart(
+              parsed.map((ci) => ({
+                ...ci,
+                selectedForOrder: ci.selectedForOrder ?? true,
+              }))
+            )
+          }
+        } else {
+          // If user had guest items before logging in, transfer them to permanent account storage
+          const guestSaved = sessionStorage.getItem("menuhub_guest_cart")
+          if (guestSaved) {
+            const guestParsed: CartItem[] = JSON.parse(guestSaved)
+            if (Array.isArray(guestParsed) && guestParsed.length > 0) {
+              setCart(
+                guestParsed.map((ci) => ({
+                  ...ci,
+                  selectedForOrder: ci.selectedForOrder ?? true,
+                }))
+              )
+              sessionStorage.removeItem("menuhub_guest_cart")
+            }
+          }
+        }
+      } else {
+        // Guest user (no account): load temporary session bag only
+        const guestSaved = sessionStorage.getItem("menuhub_guest_cart")
+        if (guestSaved) {
+          const parsed: CartItem[] = JSON.parse(guestSaved)
+          if (Array.isArray(parsed)) {
+            setCart(
+              parsed.map((ci) => ({
+                ...ci,
+                selectedForOrder: ci.selectedForOrder ?? true,
+              }))
+            )
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load cart", e)
+    } finally {
+      setIsCartHydrated(true)
+    }
+  }, [user])
+
+  // 2. Auto-save: Permanent in localStorage for registered accounts, session-only for guests
+  useEffect(() => {
+    if (!isCartHydrated) return
+
+    try {
+      if (user) {
+        // Permanent storage for registered MenuHub account
+        const userStorageKey = `menuhub_cart_user_${user.id}`
+        localStorage.setItem(userStorageKey, JSON.stringify(cart))
+      } else {
+        // Temporary session-only storage for guest users without account
+        sessionStorage.setItem("menuhub_guest_cart", JSON.stringify(cart))
+      }
+    } catch (e) {
+      console.warn("Could not save cart", e)
+    }
+  }, [cart, user, isCartHydrated])
 
   // Load stores from Supabase
   useEffect(() => {
@@ -143,48 +227,94 @@ export default function MenuHubScreen() {
     })
   }, [stores, selectedCategoryPill, searchQuery])
 
-  // Cart helper actions — variant-aware with dynamic amount
-  const handleAddToCart = (item: StoreMenuItem, selectedOptions?: SelectedOption[], quantity = 1) => {
+  // ── Cart CRUD Operations ──────────────────────────────────────────────────
+  const handleAddToCart = (
+    item: StoreMenuItem,
+    selectedOptions?: SelectedOption[],
+    quantity = 1,
+    customImage?: string
+  ) => {
     const key = cartKey(item.id, selectedOptions)
+    const storeInfo = stores.find((s) => s.id === item.storeId) || activeRestaurant
+
+    // Select thumbnail image: custom variant image > option image > item base image
+    const itemImg =
+      customImage ||
+      selectedOptions?.find((o) => o.value.image)?.value.image ||
+      item.image
+
     setCart((prev) => {
-      const existing = prev.find(
-        (ci) => cartKey(ci.item.id, ci.selectedOptions) === key
-      )
-      if (existing) {
-        return prev.map((ci) =>
-          cartKey(ci.item.id, ci.selectedOptions) === key
-            ? { ...ci, quantity: ci.quantity + quantity }
+      const existingIdx = prev.findIndex((ci) => ci.id === key)
+      if (existingIdx !== -1) {
+        return prev.map((ci, idx) =>
+          idx === existingIdx
+            ? { ...ci, quantity: ci.quantity + quantity, selectedForOrder: true }
             : ci
         )
       }
       return [
-        ...prev,
         {
+          id: key,
           item,
           quantity,
           selectedOptions: selectedOptions && selectedOptions.length > 0 ? selectedOptions : undefined,
+          selectedImage: itemImg,
+          storeId: item.storeId,
+          storeName: storeInfo?.name,
+          selectedForOrder: true,
+          createdAt: Date.now(),
         },
+        ...prev,
       ]
     })
   }
 
-  const handleRemoveFromCart = (itemId: string, selectedOptions?: SelectedOption[]) => {
-    const key = cartKey(itemId, selectedOptions)
-    setCart((prev) => {
-      const existing = prev.find(
-        (ci) => cartKey(ci.item.id, ci.selectedOptions) === key
+  // Update item quantity
+  const handleUpdateCartItemQty = (cartId: string, newQty: number) => {
+    if (newQty <= 0) {
+      handleDeleteCartItem(cartId)
+      return
+    }
+    setCart((prev) =>
+      prev.map((ci) => (ci.id === cartId ? { ...ci, quantity: newQty } : ci))
+    )
+  }
+
+  // Delete single item from cart
+  const handleDeleteCartItem = (cartId: string) => {
+    setCart((prev) => prev.filter((ci) => ci.id !== cartId))
+  }
+
+  // Toggle selection for a single cart item
+  const handleToggleCartItemSelect = (cartId: string) => {
+    setCart((prev) =>
+      prev.map((ci) =>
+        ci.id === cartId ? { ...ci, selectedForOrder: !ci.selectedForOrder } : ci
       )
-      if (existing && existing.quantity > 1) {
-        return prev.map((ci) =>
-          cartKey(ci.item.id, ci.selectedOptions) === key
-            ? { ...ci, quantity: ci.quantity - 1 }
-            : ci
-        )
-      }
-      return prev.filter(
-        (ci) => cartKey(ci.item.id, ci.selectedOptions) !== key
-      )
-    })
+    )
+  }
+
+  // Toggle select all / deselect all
+  const handleToggleSelectAll = () => {
+    const shouldSelectAll = cart.some((ci) => !ci.selectedForOrder)
+    setCart((prev) => prev.map((ci) => ({ ...ci, selectedForOrder: shouldSelectAll })))
+  }
+
+  // Delete selected items
+  const handleDeleteSelectedItems = () => {
+    const selectedCount = cart.filter((ci) => ci.selectedForOrder).length
+    if (selectedCount === 0) return
+    if (confirm(`Remove ${selectedCount} selected item(s) from your bag?`)) {
+      setCart((prev) => prev.filter((ci) => !ci.selectedForOrder))
+    }
+  }
+
+  // Clear entire cart
+  const handleClearEntireCart = () => {
+    if (cart.length === 0) return
+    if (confirm("Are you sure you want to clear your entire bag?")) {
+      setCart([])
+    }
   }
 
   // Helper to check if an option value is out of stock (multi-attribute combination aware)
@@ -381,11 +511,14 @@ export default function MenuHubScreen() {
     if (selectedEntries.length === 0) return
 
     selectedEntries.forEach((entry) => {
-      handleAddToCart(detailItem, entry.selections, entry.quantity)
+      const variantImg =
+        entry.selections.find((o) => o.value.image)?.value.image ||
+        detailDisplayImage ||
+        detailItem.image
+      handleAddToCart(detailItem, entry.selections, entry.quantity, variantImg)
     })
 
     setDetailItem(null)
-    setIsCartOpen(true)
   }
 
   // When clicking a product card, decide: open detail modal or add directly
@@ -401,13 +534,30 @@ export default function MenuHubScreen() {
     const supabase = createClient()
     await supabase.auth.signOut()
     setUser(null)
+    setCart([]) // Reset in-memory cart on logout
+    sessionStorage.removeItem("menuhub_guest_cart")
   }
 
-  const totalItemCount = cart.reduce((sum, ci) => sum + ci.quantity, 0)
-  const cartSubtotal = cart.reduce(
+  // ── Cart Calculations ───────────────────────────────────────────────────────
+  const totalCartItemCount = cart.reduce((sum, ci) => sum + ci.quantity, 0)
+  const totalCartSubtotal = cart.reduce(
     (sum, ci) => sum + computeItemPrice(ci.item, ci.selectedOptions) * ci.quantity,
     0
   )
+
+  const selectedCartItems = useMemo(
+    () => cart.filter((ci) => ci.selectedForOrder !== false),
+    [cart]
+  )
+
+  const selectedItemCount = selectedCartItems.reduce((sum, ci) => sum + ci.quantity, 0)
+  const selectedSubtotal = selectedCartItems.reduce(
+    (sum, ci) => sum + computeItemPrice(ci.item, ci.selectedOptions) * ci.quantity,
+    0
+  )
+
+  const isAllSelected = cart.length > 0 && selectedCartItems.length === cart.length
+  const isSomeSelected = selectedCartItems.length > 0 && !isAllSelected
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] text-[#0d1c2d] flex flex-col font-sans">
@@ -438,9 +588,9 @@ export default function MenuHubScreen() {
               title="Shopping Cart"
             >
               <span className="text-lg">🛒</span>
-              {totalItemCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-[#006c49] text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                  {totalItemCount}
+              {totalCartItemCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-[#006c49] text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-xs">
+                  {totalCartItemCount}
                 </span>
               )}
             </button>
@@ -644,7 +794,7 @@ export default function MenuHubScreen() {
                 onClick={() => setIsCartOpen(true)}
                 className="bg-[#006c49] hover:bg-[#005236] text-white px-4 py-2 rounded-xl font-semibold text-xs sm:text-sm flex items-center gap-2 self-start sm:self-auto shadow-xs shrink-0"
               >
-                <span>🛒 View Bag ({totalItemCount})</span>
+                <span>🛒 View Bag ({totalCartItemCount})</span>
               </button>
             </div>
           </div>
@@ -1163,144 +1313,342 @@ export default function MenuHubScreen() {
         </div>
       )}
 
-      {/* Cart Drawer */}
+      {/* Cart Drawer with Permanent Storage, Full CRUD, Item Images & Selective Telegram Checkout */}
       {isCartOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-md h-full flex flex-col justify-between p-6 shadow-2xl">
-            <div>
-              <div className="flex items-center justify-between pb-4 border-b border-[#eef4ff]">
-                <h3 className="text-lg font-bold text-[#0d1c2d]">Your Order</h3>
-                <button
-                  onClick={() => setIsCartOpen(false)}
-                  className="text-sm font-bold text-[#76777d]"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-3 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
-                {cart.length === 0 ? (
-                  <p className="text-sm text-[#76777d] text-center py-8">
-                    Your order is empty
-                  </p>
-                ) : (
-                  cart.map((ci) => {
-                    const itemTotalPrice = computeItemPrice(ci.item, ci.selectedOptions)
-                    return (
-                      <div
-                        key={cartKey(ci.item.id, ci.selectedOptions)}
-                        className="flex items-start justify-between p-3 bg-[#f8f9ff] rounded-xl border border-[#eef4ff] gap-3"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-bold text-[#0d1c2d] truncate">
-                            {ci.item.name}
-                          </p>
-                          {ci.item.barcode && (
-                            <span className="text-[9px] font-mono text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded inline-block mt-0.5 font-bold">
-                              🏷️ {ci.item.barcode}
-                            </span>
-                          )}
-                          {/* Display selected variants */}
-                          {ci.selectedOptions && ci.selectedOptions.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {ci.selectedOptions.map((opt) => (
-                                <span
-                                  key={opt.groupId}
-                                  className="text-[10px] bg-white border border-[#ccdbf2] text-[#00714d] px-1.5 py-0.5 rounded font-medium"
-                                >
-                                  {opt.groupName}: {opt.value.label}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          <p className="text-xs text-[#76777d] mt-1 font-semibold">
-                            ${itemTotalPrice.toFixed(2)} x {ci.quantity} = ${(itemTotalPrice * ci.quantity).toFixed(2)}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0 self-center">
-                          <button
-                            onClick={() => handleRemoveFromCart(ci.item.id, ci.selectedOptions)}
-                            className="w-6 h-6 rounded bg-white text-xs font-bold border border-[#c6c6cd] hover:bg-slate-50 flex items-center justify-center"
-                          >
-                            -
-                          </button>
-                          <span className="text-xs font-bold px-1">{ci.quantity}</span>
-                          <button
-                            onClick={() => handleAddToCart(ci.item, ci.selectedOptions)}
-                            className="w-6 h-6 rounded bg-[#006c49] text-white text-xs font-bold hover:bg-[#005236] flex items-center justify-center"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-            </div>
-
-            {cart.length > 0 && (
-              <div className="pt-4 border-t border-[#eef4ff] space-y-3">
-                <div className="flex justify-between text-base font-bold text-[#0d1c2d]">
-                  <span>Subtotal</span>
-                  <span className="text-[#006c49]">${cartSubtotal.toFixed(2)}</span>
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md h-full flex flex-col justify-between shadow-2xl overflow-hidden animate-in slide-in-from-right duration-200">
+            {/* Drawer Header */}
+            <div className="p-4 sm:p-5 border-b border-[#eef4ff] bg-white sticky top-0 z-10 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🛍️</span>
+                  <div>
+                    <h3 className="text-base font-bold text-[#0d1c2d]">Shopping Bag</h3>
+                    <p className="text-[11px] text-[#76777d]">
+                      {totalCartItemCount} {totalCartItemCount === 1 ? "item" : "items"} in cart
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {sellerTelegramUsername && (
+                  {cart.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => {
-                        const lines = cart.map((ci) => {
-                          const itemTotalPrice = computeItemPrice(ci.item, ci.selectedOptions) * ci.quantity
-                          const optionDesc =
-                            ci.selectedOptions && ci.selectedOptions.length > 0
-                              ? " | " + ci.selectedOptions.map((o) => `${o.groupName}: ${o.value.label}`).join(", ")
-                              : ""
-                          const barcodeText = ci.item.barcode ? ` [Barcode: ${ci.item.barcode}]` : ""
-                          return `• ${ci.item.name}${barcodeText}${optionDesc} × ${ci.quantity} — $${itemTotalPrice.toFixed(2)}`
-                        })
-                        const storeName = activeRestaurant?.name || "the store"
-                        const totalCount = cart.reduce((sum, ci) => sum + ci.quantity, 0)
-                        const divider = "─────────────────"
-                        const message = [
-                          `🛍️ Order from ${storeName}`,
-                          divider,
-                          ...lines,
-                          divider,
-                          `Total: ${totalCount} ${totalCount > 1 ? "items" : "item"} — $${cartSubtotal.toFixed(2)}`,
-                        ].join("\n")
-                        const tgUsername = sellerTelegramUsername.replace(/^@/, "")
+                      onClick={handleClearEntireCart}
+                      className="text-[11px] text-red-500 hover:text-red-700 font-semibold px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
+                      title="Clear all items"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsCartOpen(false)}
+                    className="w-8 h-8 rounded-full bg-[#f8f9ff] hover:bg-[#eef4ff] text-[#76777d] hover:text-[#0d1c2d] flex items-center justify-center text-sm font-bold transition-all"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Account Permanent Storage Status Banner */}
+              {user ? (
+                <div className="flex items-center gap-1.5 text-[11px] text-[#00714d] font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl">
+                  <span>☁️</span>
+                  <span>Permanently saved to your MenuHub account</span>
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-xl bg-amber-50 border border-amber-200 text-xs">
+                  <div className="flex items-center gap-1 text-amber-900 font-medium text-[11px]">
+                    <span>💡</span>
+                    <span>Guest Bag (Temporary)</span>
+                  </div>
+                  <Link
+                    href="/login"
+                    onClick={() => setIsCartOpen(false)}
+                    className="text-[11px] text-[#00714d] font-bold hover:underline"
+                  >
+                    Sign in to save permanently →
+                  </Link>
+                </div>
+              )}
+
+              {/* Sub-header: Select All & Batch Actions */}
+              {cart.length > 0 && (
+                <div className="pt-2 border-t border-[#eef4ff] flex items-center justify-between text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer select-none font-semibold text-[#0d1c2d]">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = isSomeSelected
+                      }}
+                      onChange={handleToggleSelectAll}
+                      className="w-4 h-4 rounded text-[#006c49] accent-[#006c49] cursor-pointer"
+                    />
+                    <span>
+                      Select All ({selectedCartItems.length}/{cart.length})
+                    </span>
+                  </label>
+
+                  {selectedCartItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteSelectedItems}
+                      className="text-[11px] text-slate-500 hover:text-red-600 font-medium transition-colors"
+                    >
+                      Remove Selected ({selectedCartItems.length})
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Cart Items List */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 bg-[#f8f9ff]">
+              {cart.length === 0 ? (
+                <div className="text-center py-16 px-4">
+                  <span className="text-5xl inline-block mb-3">🛒</span>
+                  <h4 className="text-base font-bold text-[#0d1c2d]">Your Bag is Empty</h4>
+                  <p className="text-xs text-[#76777d] mt-1 max-w-xs mx-auto">
+                    Explore our stores and add delicious items, fashion, or groceries to your order.
+                  </p>
+                  <button
+                    onClick={() => setIsCartOpen(false)}
+                    className="mt-5 bg-[#006c49] hover:bg-[#005236] text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs transition-all"
+                  >
+                    Start Shopping
+                  </button>
+                </div>
+              ) : (
+                cart.map((ci) => {
+                  const itemUnitPrice = computeItemPrice(ci.item, ci.selectedOptions)
+                  const itemTotalPrice = itemUnitPrice * ci.quantity
+
+                  return (
+                    <div
+                      key={ci.id}
+                      className={`flex items-start p-3 rounded-2xl border transition-all gap-3 ${
+                        ci.selectedForOrder
+                          ? "bg-white border-[#ccdbf2] shadow-2xs"
+                          : "bg-slate-50/70 border-slate-200 opacity-70"
+                      }`}
+                    >
+                      {/* Checkbox for Selective Ordering */}
+                      <div className="pt-1">
+                        <input
+                          type="checkbox"
+                          checked={ci.selectedForOrder}
+                          onChange={() => handleToggleCartItemSelect(ci.id)}
+                          className="w-4 h-4 rounded text-[#006c49] accent-[#006c49] cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Small Product / Variant Image Thumbnail */}
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-[#f4f7fc] border border-[#eef4ff] shrink-0 flex items-center justify-center">
+                        <Image
+                          src={ci.selectedImage || ci.item.image}
+                          alt={ci.item.name}
+                          fill
+                          sizes="56px"
+                          className="object-contain p-1"
+                        />
+                      </div>
+
+                      {/* Item Details */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-1">
+                          <p className="text-xs sm:text-sm font-bold text-[#0d1c2d] truncate">
+                            {ci.item.name}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCartItem(ci.id)}
+                            className="text-slate-400 hover:text-red-600 transition-colors text-xs p-0.5 ml-1"
+                            title="Remove item"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* Store & Barcode pills */}
+                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                          {ci.storeName && (
+                            <span className="text-[9px] text-[#76777d] font-semibold bg-slate-100 px-1.5 py-0.2 rounded">
+                              {ci.storeName}
+                            </span>
+                          )}
+                          {ci.item.barcode && (
+                            <span className="text-[9px] font-mono text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-bold">
+                              🏷️ {ci.item.barcode}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Selected Variants / Options Badges */}
+                        {ci.selectedOptions && ci.selectedOptions.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {ci.selectedOptions.map((opt) => (
+                              <span
+                                key={opt.groupId}
+                                className="text-[10px] bg-[#eef4ff] border border-[#ccdbf2] text-[#00714d] px-1.5 py-0.5 rounded-md font-semibold"
+                              >
+                                {opt.groupName}: {opt.value.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Price & Quantity Stepper */}
+                        <div className="flex items-center justify-between mt-2.5 pt-1.5 border-t border-[#f1f5f9]">
+                          <div>
+                            <span className="text-[10px] text-[#76777d]">
+                              ${itemUnitPrice.toFixed(2)} ea
+                            </span>
+                            <p className="text-xs sm:text-sm font-black text-[#006c49]">
+                              ${itemTotalPrice.toFixed(2)}
+                            </p>
+                          </div>
+
+                          {/* Stepper [- qty +] */}
+                          <div className="flex items-center gap-1 bg-[#f8f9ff] border border-[#ccdbf2] rounded-lg p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateCartItemQty(ci.id, ci.quantity - 1)}
+                              className="w-6 h-6 rounded bg-white hover:bg-slate-100 text-xs font-bold text-[#0d1c2d] flex items-center justify-center transition-all shadow-2xs"
+                            >
+                              −
+                            </button>
+                            <span className="w-6 text-center text-xs font-bold tabular-nums text-[#0d1c2d]">
+                              {ci.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateCartItemQty(ci.id, ci.quantity + 1)}
+                              className="w-6 h-6 rounded bg-[#006c49] hover:bg-[#005236] text-xs font-bold text-white flex items-center justify-center transition-all shadow-2xs"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {/* Sticky Drawer Footer */}
+            {cart.length > 0 && (
+              <div className="p-4 sm:p-5 border-t border-[#eef4ff] bg-white space-y-3 shadow-lg">
+                {/* Price Breakdown */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-[#76777d]">
+                    <span>Total Bag ({totalCartItemCount} items)</span>
+                    <span>${totalCartSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-baseline text-base font-black text-[#0d1c2d]">
+                    <span className="flex items-center gap-1.5">
+                      <span>Selected for Order</span>
+                      <span className="text-xs font-bold text-[#006c49] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        {selectedItemCount} items
+                      </span>
+                    </span>
+                    <span className="text-lg text-[#006c49]">${selectedSubtotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Action Buttons: Telegram Order (Selected) & Direct Checkout */}
+                <div className="flex items-center gap-2 pt-1">
+                  {/* Telegram Send Order Button */}
+                  <button
+                    type="button"
+                    disabled={selectedItemCount <= 0}
+                    onClick={() => {
+                      if (selectedCartItems.length === 0) return
+                      const lines = selectedCartItems.map((ci) => {
+                        const itemTotalPrice = computeItemPrice(ci.item, ci.selectedOptions) * ci.quantity
+                        const optionDesc =
+                          ci.selectedOptions && ci.selectedOptions.length > 0
+                            ? " | " + ci.selectedOptions.map((o) => `${o.groupName}: ${o.value.label}`).join(", ")
+                            : ""
+                        const barcodeText = ci.item.barcode ? ` [Barcode: ${ci.item.barcode}]` : ""
+                        const storeTag = ci.storeName ? ` (${ci.storeName})` : ""
+                        return `• ${ci.item.name}${barcodeText}${storeTag}${optionDesc} × ${ci.quantity} — $${itemTotalPrice.toFixed(2)}`
+                      })
+                      const storeName =
+                        activeRestaurant?.name || selectedCartItems[0]?.storeName || "MenuHub Store"
+                      const divider = "─────────────────"
+                      const message = [
+                        `🛍️ Order from ${storeName}`,
+                        divider,
+                        ...lines,
+                        divider,
+                        `Total: ${selectedItemCount} ${selectedItemCount > 1 ? "items" : "item"} — $${selectedSubtotal.toFixed(2)}`,
+                      ].join("\n")
+                      const tgUsername = (sellerTelegramUsername || "").replace(/^@/, "")
+                      if (tgUsername) {
                         window.open(
                           `https://t.me/${tgUsername}?text=${encodeURIComponent(message)}`,
                           "_blank"
                         )
-                      }}
-                      className="w-12 h-12 rounded-xl flex items-center justify-center bg-[#2196F3] hover:bg-[#1976d2] text-white shadow-xs shrink-0 transition-all"
-                      title="Send full cart order to seller via Telegram"
-                    >
-                      <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
-                        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
-                      </svg>
-                    </button>
-                  )}
+                      } else {
+                        // Fallback: Copy to clipboard
+                        navigator.clipboard.writeText(message)
+                        alert("Order summary copied to clipboard! (The seller does not have a linked Telegram account yet)")
+                      }
+                    }}
+                    className="h-12 px-4 rounded-xl flex items-center justify-center gap-2 bg-[#2196F3] hover:bg-[#1976d2] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-xs shrink-0"
+                    title="Send selected order items via Telegram"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
+                      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                    </svg>
+                    <span className="hidden sm:inline">Send to Telegram</span>
+                  </button>
 
+                  {/* Checkout Button */}
                   <button
+                    disabled={selectedItemCount <= 0}
                     onClick={() => {
-                      alert("Order / Bag submitted successfully!")
-                      setCart([])
+                      if (selectedCartItems.length === 0) return
+                      alert(`Successfully placed order for ${selectedItemCount} items ($${selectedSubtotal.toFixed(2)})!`)
+                      // Remove only the checked items, keep unchecked items saved
+                      setCart((prev) => prev.filter((ci) => !ci.selectedForOrder))
                       setIsCartOpen(false)
                     }}
-                    className="flex-1 bg-[#006c49] text-white py-3.5 rounded-xl font-semibold text-sm hover:bg-[#005236] transition-all shadow-xs"
+                    className="flex-1 h-12 bg-[#006c49] hover:bg-[#005236] disabled:opacity-40 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs flex items-center justify-center gap-1.5"
                   >
-                    Checkout & Place Order
+                    <span>
+                      {selectedItemCount <= 0
+                        ? "Select Items to Order"
+                        : `Checkout ${selectedItemCount} ${selectedItemCount === 1 ? "Item" : "Items"} · $${selectedSubtotal.toFixed(2)}`}
+                    </span>
                   </button>
                 </div>
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {/* Floating Cart Quick Access Pill */}
+      {totalCartItemCount > 0 && !isCartOpen && (
+        <button
+          type="button"
+          onClick={() => setIsCartOpen(true)}
+          className="fixed bottom-6 right-6 z-40 bg-[#006c49] hover:bg-[#005236] text-white px-4 py-3 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center gap-3 border-2 border-emerald-300 animate-in fade-in slide-in-from-bottom-4 group cursor-pointer"
+        >
+          <div className="relative">
+            <span className="text-xl">🛍️</span>
+            <span className="absolute -top-1.5 -right-1.5 bg-amber-400 text-slate-900 text-[10px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center shadow-xs">
+              {totalCartItemCount}
+            </span>
+          </div>
+          <div className="text-left">
+            <p className="text-[10px] font-medium text-emerald-100 uppercase tracking-wider leading-none">Your Bag</p>
+            <p className="text-xs font-black mt-0.5">${totalCartSubtotal.toFixed(2)}</p>
+          </div>
+        </button>
       )}
 
       {/* Footer Section */}
