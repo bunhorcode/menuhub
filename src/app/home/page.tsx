@@ -14,6 +14,19 @@ interface SelectedOption {
   value: OptionValue
 }
 
+interface ModalOptionQuantityEntry {
+  selections: SelectedOption[]
+  quantity: number
+}
+
+// Helper to generate unique key for a set of selected options
+function getComboKey(options: SelectedOption[]): string {
+  return options
+    .map((o) => `${o.groupId}:${o.value.id}`)
+    .sort()
+    .join("|")
+}
+
 interface CartItem {
   item: StoreMenuItem
   quantity: number
@@ -23,11 +36,7 @@ interface CartItem {
 // Generate a unique cart key based on item ID + selected option values
 function cartKey(itemId: string, selectedOptions?: SelectedOption[]): string {
   if (!selectedOptions || selectedOptions.length === 0) return itemId
-  const optKey = selectedOptions
-    .map((o) => `${o.groupId}:${o.value.id}`)
-    .sort()
-    .join("|")
-  return `${itemId}__${optKey}`
+  return `${itemId}__${getComboKey(selectedOptions)}`
 }
 
 const CATEGORY_PILLS = [
@@ -60,8 +69,8 @@ export default function MenuHubScreen() {
   const [detailItem, setDetailItem] = useState<StoreMenuItem | null>(null)
   const [detailSelectedOptions, setDetailSelectedOptions] = useState<SelectedOption[]>([])
   const [detailDisplayImage, setDetailDisplayImage] = useState<string>("")
-  // Per-value quantities for the last option group (e.g. Size S: 2, Size M: 0, Size L: 1)
-  const [detailValueQuantities, setDetailValueQuantities] = useState<Record<string, number>>({})
+  // Per-combination quantities across all variants (e.g. White+S: 1, White+M: 1, Black+S: 1, Black+M: 1)
+  const [detailComboQuantities, setDetailComboQuantities] = useState<Record<string, ModalOptionQuantityEntry>>({})
 
   // Seller Telegram username for the active store (used for order notification button)
   const [sellerTelegramUsername, setSellerTelegramUsername] = useState<string | null>(null)
@@ -294,7 +303,7 @@ export default function MenuHubScreen() {
   const handleOpenItemDetail = (item: StoreMenuItem) => {
     setDetailItem(item)
     setDetailDisplayImage(item.image)
-    setDetailValueQuantities({})
+    setDetailComboQuantities({})
     // Pre-select first in-stock value of each non-last required group (last group uses qty rows)
     const initialSelections: SelectedOption[] = []
     if (item.options && item.options.length > 0) {
@@ -367,26 +376,16 @@ export default function MenuHubScreen() {
   }
 
   const handleAddFromDetail = () => {
-    if (!detailItem || !detailItem.options || detailItem.options.length === 0) return
-    const lastGroup = detailItem.options[detailItem.options.length - 1]
-    const baseSelections = detailSelectedOptions.filter((o) => o.groupId !== lastGroup.id)
-    let addedAny = false
+    if (!detailItem) return
+    const selectedEntries = Object.values(detailComboQuantities).filter((e) => e.quantity > 0)
+    if (selectedEntries.length === 0) return
 
-    lastGroup.values.forEach((val) => {
-      const qty = detailValueQuantities[val.id] || 0
-      if (qty <= 0) return
-      const fullSelections: SelectedOption[] = [
-        ...baseSelections,
-        { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
-      ]
-      handleAddToCart(detailItem, fullSelections, qty)
-      addedAny = true
+    selectedEntries.forEach((entry) => {
+      handleAddToCart(detailItem, entry.selections, entry.quantity)
     })
 
-    if (addedAny) {
-      setDetailItem(null)
-      setIsCartOpen(true)
-    }
+    setDetailItem(null)
+    setIsCartOpen(true)
   }
 
   // When clicking a product card, decide: open detail modal or add directly
@@ -774,23 +773,13 @@ export default function MenuHubScreen() {
                   </h3>
                   <span className="text-base sm:text-lg font-black text-[#006c49] shrink-0">
                     {(() => {
-                      if (!detailItem.options || detailItem.options.length === 0) return `$${detailItem.price.toFixed(2)}`
-                      const lastGroup = detailItem.options[detailItem.options.length - 1]
-                      const baseSelections = detailSelectedOptions.filter((o) => o.groupId !== lastGroup.id)
-                      let total = 0
-                      let anyQty = false
-                      lastGroup.values.forEach((val) => {
-                        const qty = detailValueQuantities[val.id] || 0
-                        if (qty > 0) {
-                          anyQty = true
-                          const fullSel: SelectedOption[] = [
-                            ...baseSelections,
-                            { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
-                          ]
-                          total += computeItemPrice(detailItem, fullSel) * qty
-                        }
-                      })
-                      return anyQty ? `$${total.toFixed(2)}` : `$${detailItem.price.toFixed(2)}`
+                      if (!detailItem) return "$0.00"
+                      const selectedEntries = Object.values(detailComboQuantities).filter((e) => e.quantity > 0)
+                      const total = selectedEntries.reduce(
+                        (sum, e) => sum + computeItemPrice(detailItem, e.selections) * e.quantity,
+                        0
+                      )
+                      return selectedEntries.length > 0 ? `$${total.toFixed(2)}` : `$${detailItem.price.toFixed(2)}`
                     })()}
                   </span>
                 </div>
@@ -862,6 +851,11 @@ export default function MenuHubScreen() {
                                 detailItem, group.id, group.name, val, detailSelectedOptions
                               )
                               const isSelected = currentSelection?.value.id === val.id
+                              // Count of items selected under this pill across all last-group values
+                              const pillItemCount = Object.values(detailComboQuantities)
+                                .filter((e) => e.selections.some((s) => s.groupId === group.id && s.value.id === val.id))
+                                .reduce((sum, e) => sum + e.quantity, 0)
+
                               return (
                                 <button
                                   key={val.id}
@@ -884,6 +878,11 @@ export default function MenuHubScreen() {
                                     </div>
                                   )}
                                   <span>{val.label}</span>
+                                  {pillItemCount > 0 && (
+                                    <span className="bg-[#006c49] text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                                      {pillItemCount}
+                                    </span>
+                                  )}
                                   {isOutOfStock && (
                                     <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1.5 py-0.5 rounded no-underline">No Stock</span>
                                   )}
@@ -910,9 +909,10 @@ export default function MenuHubScreen() {
                             ...baseSelections,
                             { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
                           ]
+                          const comboKey = getComboKey(candidateSelections)
                           const skuStock = getSelectedSkuStock(detailItem, candidateSelections)
                           const isOutOfStock = skuStock !== undefined && skuStock <= 0
-                          const qty = detailValueQuantities[val.id] || 0
+                          const qty = detailComboQuantities[comboKey]?.quantity || 0
                           const maxQty = skuStock !== undefined ? skuStock : 999
 
                           // Compute SKU sell price for this combination
@@ -967,10 +967,22 @@ export default function MenuHubScreen() {
                                   type="button"
                                   disabled={isOutOfStock || qty <= 0}
                                   onClick={() => {
-                                    setDetailValueQuantities((prev) => ({
-                                      ...prev,
-                                      [val.id]: Math.max(0, (prev[val.id] || 0) - 1),
-                                    }))
+                                    setDetailComboQuantities((prev) => {
+                                      const current = prev[comboKey]?.quantity || 0
+                                      const nextQty = Math.max(0, current - 1)
+                                      if (nextQty <= 0) {
+                                        const updated = { ...prev }
+                                        delete updated[comboKey]
+                                        return updated
+                                      }
+                                      return {
+                                        ...prev,
+                                        [comboKey]: {
+                                          selections: candidateSelections,
+                                          quantity: nextQty,
+                                        },
+                                      }
+                                    })
                                   }}
                                   className="w-8 h-8 rounded-lg bg-white border border-[#ccdbf2] text-xs font-bold text-[#0d1c2d] hover:bg-slate-50 disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center transition-all"
                                 >
@@ -985,10 +997,17 @@ export default function MenuHubScreen() {
                                   type="button"
                                   disabled={isOutOfStock || qty >= maxQty}
                                   onClick={() => {
-                                    setDetailValueQuantities((prev) => ({
-                                      ...prev,
-                                      [val.id]: Math.min(maxQty, (prev[val.id] || 0) + 1),
-                                    }))
+                                    setDetailComboQuantities((prev) => {
+                                      const current = prev[comboKey]?.quantity || 0
+                                      const nextQty = Math.min(maxQty, current + 1)
+                                      return {
+                                        ...prev,
+                                        [comboKey]: {
+                                          selections: candidateSelections,
+                                          quantity: nextQty,
+                                        },
+                                      }
+                                    })
                                   }}
                                   className="w-8 h-8 rounded-lg bg-[#006c49] text-white text-xs font-bold hover:bg-[#005236] disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center transition-all"
                                 >
@@ -1000,6 +1019,57 @@ export default function MenuHubScreen() {
                         })}
                       </div>
                     </div>
+
+                    {/* ── Selected Combinations Summary Chips ── */}
+                    {Object.keys(detailComboQuantities).length > 0 && (
+                      <div className="pt-3 border-t border-[#eef4ff] space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-[#0d1c2d]">
+                            Selected Items ({Object.values(detailComboQuantities).reduce((s, e) => s + e.quantity, 0)})
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setDetailComboQuantities({})}
+                            className="text-[10px] text-red-500 font-semibold hover:underline"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {Object.entries(detailComboQuantities).map(([k, entry]) => {
+                            const desc = entry.selections.map((s) => `${s.groupName}: ${s.value.label}`).join(", ")
+                            const price = computeItemPrice(detailItem, entry.selections) * entry.quantity
+                            return (
+                              <span
+                                key={k}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eef4ff] text-[#00714d] text-[11px] font-semibold border border-[#ccdbf2]"
+                              >
+                                <span>{desc}</span>
+                                <span className="bg-[#006c49] text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                                  ×{entry.quantity}
+                                </span>
+                                <span className="text-[#0d1c2d] font-bold text-[10px]">
+                                  ${price.toFixed(2)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDetailComboQuantities((prev) => {
+                                      const copy = { ...prev }
+                                      delete copy[k]
+                                      return copy
+                                    })
+                                  }}
+                                  className="text-[#76777d] hover:text-red-500 font-bold ml-0.5 text-xs leading-none"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })()}
@@ -1007,24 +1077,13 @@ export default function MenuHubScreen() {
 
             {/* Modal Footer / Add to Bag */}
             {(() => {
-              if (!detailItem.options || detailItem.options.length === 0) return null
-              const lastGroup = detailItem.options[detailItem.options.length - 1]
-              const baseSelections = detailSelectedOptions.filter((o) => o.groupId !== lastGroup.id)
-
-              // Compute total quantity and price across all value rows
-              let totalQty = 0
-              let totalPrice = 0
-              lastGroup.values.forEach((val) => {
-                const qty = detailValueQuantities[val.id] || 0
-                if (qty > 0) {
-                  const fullSel: SelectedOption[] = [
-                    ...baseSelections,
-                    { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
-                  ]
-                  totalQty += qty
-                  totalPrice += computeItemPrice(detailItem, fullSel) * qty
-                }
-              })
+              if (!detailItem) return null
+              const selectedEntries = Object.values(detailComboQuantities).filter((e) => e.quantity > 0)
+              const totalQty = selectedEntries.reduce((sum, e) => sum + e.quantity, 0)
+              const totalPrice = selectedEntries.reduce(
+                (sum, e) => sum + computeItemPrice(detailItem, e.selections) * e.quantity,
+                0
+              )
 
               return (
                 <div className="p-4 sm:p-5 border-t border-[#eef4ff] bg-[#f8f9ff] sticky bottom-0 space-y-3">
@@ -1049,20 +1108,13 @@ export default function MenuHubScreen() {
                           title="Send order to seller via Telegram"
                           disabled={totalQty <= 0}
                           onClick={() => {
-                            // Build order summary lines
-                            const lines: string[] = []
-                            lastGroup.values.forEach((val) => {
-                              const qty = detailValueQuantities[val.id] || 0
-                              if (qty <= 0) return
-                              const fullSel: SelectedOption[] = [
-                                ...baseSelections,
-                                { groupId: lastGroup.id, groupName: lastGroup.name, value: val },
-                              ]
-                              const linePrice = computeItemPrice(detailItem, fullSel) * qty
-                              const optionDesc = fullSel
+                            // Build order summary lines across all selected combinations
+                            const lines = selectedEntries.map((entry) => {
+                              const linePrice = computeItemPrice(detailItem, entry.selections) * entry.quantity
+                              const optionDesc = entry.selections
                                 .map((o) => `${o.groupName}: ${o.value.label}`)
                                 .join(", ")
-                              lines.push(`• ${detailItem.name} | ${optionDesc} × ${qty} — $${linePrice.toFixed(2)}`)
+                              return `• ${detailItem.name} | ${optionDesc} × ${entry.quantity} — $${linePrice.toFixed(2)}`
                             })
                             const storeName = activeRestaurant?.name || "the store"
                             const divider = "─────────────────"
