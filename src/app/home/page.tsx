@@ -210,6 +210,9 @@ export default function MenuHubScreen() {
       const matching = item.variants.find((v) =>
         Object.entries(candidateCombo).every(([k, l]) => v.options[k] === l)
       )
+      if (matching && matching.sellPrice !== undefined && matching.sellPrice > 0) {
+        return matching.sellPrice
+      }
       if (matching && matching.priceAdjustment !== undefined && matching.priceAdjustment !== 0) {
         return base + matching.priceAdjustment
       }

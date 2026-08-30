@@ -34,7 +34,9 @@ export interface VariantCombination {
   id: string
   options: Record<string, string> // e.g. { "Color": "Red", "Size": "S" }
   stock: number                   // stock quantity: e.g. 2, 0 (0 = No Stock)
-  priceAdjustment?: number        // e.g. +2.00
+  costPrice?: number              // cost / wholesale price (seller unit cost, e.g. 10.00)
+  sellPrice?: number              // specific selling / retail price for this SKU (e.g. 25.00)
+  priceAdjustment?: number        // delta adjustment (+/- e.g. +2.00)
   image?: string                  // variant combination image URL (optional)
 }
 

@@ -136,6 +136,8 @@ export function SellerPortal({ user }: { user: User }) {
         id: Math.random().toString(36).substring(2, 10),
         options: combo,
         stock: 5,
+        costPrice: undefined,
+        sellPrice: parseFloat(itemPrice) || 0,
         priceAdjustment: 0,
       }
     })
@@ -152,6 +154,18 @@ export function SellerPortal({ user }: { user: User }) {
     )
   }
 
+  const handleUpdateVariantCostPrice = (comboId: string, costPrice: number | undefined) => {
+    setItemVariants((prev) =>
+      prev.map((v) => (v.id === comboId ? { ...v, costPrice } : v))
+    )
+  }
+
+  const handleUpdateVariantSellPrice = (comboId: string, sellPrice: number | undefined) => {
+    setItemVariants((prev) =>
+      prev.map((v) => (v.id === comboId ? { ...v, sellPrice } : v))
+    )
+  }
+
   const handleUpdateVariantPrice = (comboId: string, priceAdjustment: number) => {
     setItemVariants((prev) =>
       prev.map((v) => (v.id === comboId ? { ...v, priceAdjustment } : v))
@@ -160,6 +174,11 @@ export function SellerPortal({ user }: { user: User }) {
 
   const handleSetAllVariantsStock = (stock: number) => {
     setItemVariants((prev) => prev.map((v) => ({ ...v, stock })))
+  }
+
+  const handleSetAllSellPriceToBase = () => {
+    const base = parseFloat(itemPrice) || 0
+    setItemVariants((prev) => prev.map((v) => ({ ...v, sellPrice: base })))
   }
 
   // ── Option Group Builder Helpers ──────────────────────────────────────────
@@ -1566,14 +1585,22 @@ export function SellerPortal({ user }: { user: User }) {
                           className="text-[10px] font-bold text-[#006c49] bg-white border border-[#ccdbf2] hover:border-[#006c49] px-2.5 py-1 rounded-lg transition-all"
                           title="Generate or sync all combinations"
                         >
-                          ⚡ Generate / Sync
+                          ⚡ Sync SKUs
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSetAllSellPriceToBase}
+                          className="text-[10px] font-semibold text-[#0d1c2d] bg-white border border-[#ccdbf2] hover:bg-slate-50 px-2 py-1 rounded-lg transition-all"
+                          title="Apply base item price to all SKU Sell Prices"
+                        >
+                          Set Base Sell Price
                         </button>
                         <button
                           type="button"
                           onClick={() => handleSetAllVariantsStock(10)}
                           className="text-[10px] font-semibold text-[#0d1c2d] bg-white border border-[#ccdbf2] hover:bg-slate-50 px-2 py-1 rounded-lg transition-all"
                         >
-                          All: 10
+                          All Stock: 10
                         </button>
                         <button
                           type="button"
@@ -1596,29 +1623,32 @@ export function SellerPortal({ user }: { user: User }) {
                         </button>
                       </div>
                     ) : (
-                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                         {itemVariants.map((variant) => {
                           const isOutOfStock = variant.stock <= 0
-                          const comboText = Object.entries(variant.options)
-                            .map(([k, v]) => `${k}: ${v}`)
-                            .join(" · ")
+                          const margin =
+                            variant.sellPrice !== undefined &&
+                            variant.costPrice !== undefined &&
+                            variant.costPrice > 0
+                              ? variant.sellPrice - variant.costPrice
+                              : null
 
                           return (
                             <div
                               key={variant.id}
-                              className={`flex items-center justify-between p-2.5 rounded-xl border transition-all text-xs ${
+                              className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border transition-all text-xs gap-2.5 ${
                                 isOutOfStock
                                   ? "bg-red-50/40 border-red-200"
                                   : "bg-white border-[#eef4ff] hover:border-[#ccdbf2]"
                               }`}
                             >
-                              {/* Combination tags */}
-                              <div className="min-w-0 flex-1 pr-2">
-                                <div className="flex flex-wrap items-center gap-1">
+                              {/* Combination tags & Margin indicator */}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-1.5">
                                   {Object.entries(variant.options).map(([k, v]) => (
                                     <span
                                       key={k}
-                                      className="text-[10px] font-bold bg-[#eef4ff] text-[#00714d] px-2 py-0.5 rounded-md"
+                                      className="text-[10px] font-bold bg-[#eef4ff] text-[#00714d] px-2 py-0.5 rounded-md border border-[#ccdbf2]"
                                     >
                                       {k}: {v}
                                     </span>
@@ -1632,28 +1662,61 @@ export function SellerPortal({ user }: { user: User }) {
                                       In Stock
                                     </span>
                                   )}
+                                  {margin !== null && (
+                                    <span
+                                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                        margin >= 0
+                                          ? "text-emerald-700 bg-emerald-50 border border-emerald-200"
+                                          : "text-red-700 bg-red-50 border border-red-200"
+                                      }`}
+                                    >
+                                      Margin: ${margin.toFixed(2)}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
 
-                              {/* Price Adjustment & Stock Qty */}
-                              <div className="flex items-center gap-2 shrink-0">
-                                <div className="flex items-center gap-1" title="Price adjustment for this SKU">
-                                  <span className="text-[10px] text-[#76777d]">+$</span>
+                              {/* Cost Price, Sell Price & Stock Qty */}
+                              <div className="flex items-center gap-2 flex-wrap shrink-0">
+                                {/* Cost Price */}
+                                <div className="flex items-center gap-1" title="Cost / Wholesale price (Seller unit cost)">
+                                  <span className="text-[10px] text-[#76777d] font-semibold">Cost: $</span>
                                   <input
                                     type="number"
                                     step="0.01"
-                                    value={variant.priceAdjustment || ""}
+                                    min="0"
+                                    value={variant.costPrice !== undefined ? variant.costPrice : ""}
                                     onChange={(e) =>
-                                      handleUpdateVariantPrice(
+                                      handleUpdateVariantCostPrice(
                                         variant.id,
-                                        parseFloat(e.target.value) || 0
+                                        e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
                                       )
                                     }
                                     placeholder="0.00"
-                                    className="w-14 h-7 px-1.5 bg-white border border-[#c6c6cd] rounded-lg text-xs outline-none focus:border-[#006c49] text-right"
+                                    className="w-16 h-7 px-1.5 bg-white border border-[#c6c6cd] rounded-lg text-xs outline-none focus:border-[#006c49] text-right font-medium"
                                   />
                                 </div>
 
+                                {/* Sell Price */}
+                                <div className="flex items-center gap-1" title="Selling / Retail price for this SKU">
+                                  <span className="text-[10px] text-[#006c49] font-bold">Sell: $</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={variant.sellPrice !== undefined ? variant.sellPrice : ""}
+                                    onChange={(e) =>
+                                      handleUpdateVariantSellPrice(
+                                        variant.id,
+                                        e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
+                                      )
+                                    }
+                                    placeholder={itemPrice}
+                                    className="w-16 h-7 px-1.5 bg-white border border-[#006c49] text-[#006c49] rounded-lg text-xs font-bold outline-none text-right"
+                                  />
+                                </div>
+
+                                {/* Stock Quantity */}
                                 <div className="flex items-center gap-1" title="Stock quantity for this SKU (0 = No Stock)">
                                   <span className="text-[10px] text-[#76777d] font-semibold">Stock:</span>
                                   <input
