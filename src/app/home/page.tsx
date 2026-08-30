@@ -471,7 +471,7 @@ export default function MenuHubScreen() {
                 </Link>
               </div>
             ) : (
-              filteredRestaurants.map((rest) => (
+              filteredRestaurants.map((rest, idx) => (
                 <div
                   key={rest.id}
                   onClick={() => setActiveRestaurant(rest)}
@@ -483,6 +483,7 @@ export default function MenuHubScreen() {
                       src={rest.image}
                       alt={rest.name}
                       fill
+                      priority={idx < 4}
                       sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                       className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
                     />
@@ -575,7 +576,7 @@ export default function MenuHubScreen() {
                 </Link>
               </div>
             ) : (
-              storeDishes.map((item) => (
+              storeDishes.map((item, idx) => (
                 <div
                   key={item.id}
                   className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between group"
@@ -587,6 +588,7 @@ export default function MenuHubScreen() {
                         src={item.image}
                         alt={item.name}
                         fill
+                        priority={idx < 4}
                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                         className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
                       />
@@ -683,6 +685,7 @@ export default function MenuHubScreen() {
                   src={detailDisplayImage || detailItem.image}
                   alt={detailItem.name}
                   fill
+                  priority
                   sizes="(max-width: 640px) 100vw, 400px"
                   className="object-contain p-2 transition-all duration-300"
                 />

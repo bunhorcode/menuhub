@@ -70,7 +70,7 @@ const PRODUCT_CATEGORIES = [
   "Coffee & Drinks",
   "Electronics & Tech",
   "Beauty & Personal Care",
-  "Chef's Dishes & Mains",
+  "Food & Dining",
   "Home & Living",
   "Accessories & Gifts",
   "General Merchandise",
@@ -527,11 +527,11 @@ export function SellerPortal({ user }: { user: User }) {
     } else {
       setEditingItemId(null)
       setItemName("")
-      setItemCategory("Chef's Specials")
+      setItemCategory(PRODUCT_CATEGORIES[0])
       setItemPrice("18.50")
       setItemDescription("")
       setItemImage("/images/truffle_pasta.jpg")
-      setItemTags("POPULAR, CHEF'S PICK")
+      setItemTags("POPULAR, BESTSELLER")
       setItemCalories("550 kcal")
       setItemPrepTime("15 min")
       setItemAvailable(true)
@@ -829,58 +829,58 @@ export function SellerPortal({ user }: { user: User }) {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {stores.map((store) => {
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
+            {stores.map((store, index) => {
               const isSelected = store.id === selectedStoreId
               return (
                 <div
                   key={store.id}
                   onClick={() => setSelectedStoreId(store.id)}
-                  className={`cursor-pointer rounded-2xl border transition-all overflow-hidden flex flex-col justify-between ${
+                  className={`cursor-pointer rounded-xl border transition-all overflow-hidden flex flex-col justify-between bg-white shadow-xs hover:shadow-md group ${
                     isSelected
-                      ? "border-[#006c49] ring-2 ring-[#6cf8bb]/40 shadow-sm"
+                      ? "border-[#006c49] ring-2 ring-[#6cf8bb]/40"
                       : "border-[#eef4ff] hover:border-[#cbd5e1]"
                   }`}
                 >
                   <div>
-                    <div className="relative h-36 w-full bg-slate-100 overflow-hidden">
+                    {/* Compact Square Image Frame - Matching Home Page Style */}
+                    <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
                       <Image
                         src={store.image}
                         alt={store.name}
                         fill
-                        sizes="(max-width: 768px) 100vw, 33vw"
-                        className="object-cover"
+                        priority={index === 0}
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                        className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
                       />
-                      <div className="absolute top-2 left-2 bg-white/95 px-2.5 py-1 rounded-lg text-xs font-bold shadow-xs">
-                        {store.badgeIcon} {store.category}
+                      <div className="absolute top-2 left-2 bg-white/90 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-bold shadow-xs">
+                        {store.badgeIcon} <span className="hidden sm:inline">{store.category}</span>
                       </div>
                       {isSelected && (
-                        <div className="absolute top-2 right-2 bg-[#006c49] text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                          Active Store
+                        <div className="absolute top-2 right-2 bg-[#006c49] text-white px-2 py-0.5 rounded-full text-[9px] font-bold shadow-xs">
+                          Active
                         </div>
                       )}
                     </div>
 
-                    <div className="p-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-bold text-[#0d1c2d] truncate">{store.name}</h4>
-                        <span className="text-xs font-bold text-[#006c49]">{store.priceRange}</span>
+                    <div className="p-2.5 sm:p-3">
+                      <div className="flex items-center justify-between gap-1">
+                        <h4 className="text-xs sm:text-sm font-bold text-[#0d1c2d] truncate">{store.name}</h4>
+                        <span className="text-xs font-bold text-[#006c49] shrink-0">{store.priceRange}</span>
                       </div>
-                      <p className="text-[11px] text-[#76777d] mt-1 line-clamp-1">{store.cuisine}</p>
+                      <p className="text-[10px] sm:text-[11px] text-[#76777d] mt-0.5 line-clamp-1">{store.cuisine}</p>
                     </div>
                   </div>
 
-                  <div className="p-4 pt-0 flex items-center justify-between border-t border-[#f1f5f9] mt-2">
-                    <span className="text-[11px] font-medium text-[#76777d]">
-                      ★ {store.rating} ({store.reviewsCount} reviews)
-                    </span>
+                  <div className="p-2.5 sm:p-3 pt-0 flex items-center justify-between border-t border-[#f1f5f9] text-[10px] sm:text-xs text-[#76777d]">
+                    <span>★ {store.rating} ({store.reviewsCount})</span>
                     <div className="flex gap-2">
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
                           handleOpenStoreModal(store)
                         }}
-                        className="text-xs font-semibold text-[#006c49] hover:underline"
+                        className="font-semibold text-[#006c49] hover:underline"
                       >
                         Edit
                       </button>
@@ -889,7 +889,7 @@ export function SellerPortal({ user }: { user: User }) {
                           e.stopPropagation()
                           handleDeleteStore(store.id)
                         }}
-                        className="text-xs font-semibold text-red-600 hover:underline"
+                        className="font-semibold text-red-600 hover:underline"
                       >
                         Delete
                       </button>
@@ -935,27 +935,29 @@ export function SellerPortal({ user }: { user: User }) {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {menuItems.map((item) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
+              {menuItems.map((item, idx) => (
                 <div
                   key={item.id}
-                  className="rounded-2xl border border-[#eef4ff] overflow-hidden flex flex-col justify-between bg-white shadow-xs"
+                  className="rounded-xl border border-[#eef4ff] overflow-hidden flex flex-col justify-between bg-white shadow-xs hover:shadow-md transition-all duration-200 group"
                 >
                   <div>
-                    <div className="relative h-40 w-full bg-slate-100 overflow-hidden">
+                    {/* Compact Square Image Frame - Full Image */}
+                    <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
                       <Image
                         src={item.image}
                         alt={item.name}
                         fill
-                        sizes="(max-width: 768px) 100vw, 33vw"
-                        className="object-cover"
+                        priority={idx < 4}
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                        className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
                       />
-                      <div className="absolute top-2 left-2 bg-white/95 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-[#0d1c2d]">
+                      <div className="absolute top-2 left-2 bg-white/90 backdrop-blur-xs px-2 py-0.5 rounded-full text-[10px] font-bold text-[#0d1c2d] shadow-xs">
                         {item.category}
                       </div>
                       <button
                         onClick={() => handleToggleAvailable(item)}
-                        className={`absolute top-2 right-2 px-2.5 py-0.5 rounded-full text-[10px] font-bold transition-all shadow-xs ${
+                        className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[9px] font-bold transition-all shadow-xs ${
                           item.available
                             ? "bg-emerald-600 text-white"
                             : "bg-red-600 text-white"
@@ -965,36 +967,40 @@ export function SellerPortal({ user }: { user: User }) {
                       </button>
                     </div>
 
-                    <div className="p-4">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <h4 className="font-bold text-sm text-[#0d1c2d]">{item.name}</h4>
-                        <span className="font-bold text-sm text-[#006c49]">
+                    <div className="p-2.5 sm:p-3">
+                      <div className="flex items-start justify-between gap-1 mb-1">
+                        <h4 className="font-bold text-xs sm:text-sm text-[#0d1c2d] line-clamp-1">{item.name}</h4>
+                        <span className="font-bold text-xs sm:text-sm text-[#006c49] shrink-0">
                           ${item.price.toFixed(2)}
                         </span>
                       </div>
 
-                      <p className="text-xs text-[#76777d] line-clamp-2 leading-relaxed">
-                        {item.description}
-                      </p>
+                      {item.description && (
+                        <p className="text-[10px] sm:text-[11px] text-[#76777d] line-clamp-1">
+                          {item.description}
+                        </p>
+                      )}
 
-                      <div className="flex flex-wrap gap-1.5 mt-3">
-                        {item.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="bg-[#eef4ff] text-[#00714d] px-2 py-0.5 rounded-md text-[10px] font-bold"
-                          >
-                            {tag}
+                      {item.options && item.options.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          <span className="text-[9px] bg-[#eef4ff] text-[#00714d] px-1.5 py-0.5 rounded font-bold">
+                            {item.options.length} {item.options.length > 1 ? "options" : "option"}
                           </span>
-                        ))}
-                      </div>
+                          {item.variants && item.variants.length > 0 && (
+                            <span className="text-[9px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium">
+                              {item.variants.length} SKUs
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="p-4 pt-0 border-t border-[#f1f5f9] flex items-center justify-between text-xs text-[#76777d] mt-2">
-                    <span>
-                      {item.prepTime || "15 min"} • {item.calories || "500 kcal"}
+                  <div className="p-2.5 sm:p-3 pt-0 border-t border-[#f1f5f9] flex items-center justify-between text-[10px] sm:text-xs text-[#76777d]">
+                    <span className="truncate max-w-[70px] sm:max-w-[100px]">
+                      {item.calories || item.prepTime || "Available"}
                     </span>
-                    <div className="flex gap-2.5">
+                    <div className="flex gap-2 shrink-0">
                       <button
                         onClick={() => handleOpenItemModal(item)}
                         className="font-semibold text-[#006c49] hover:underline"
