@@ -1,5 +1,6 @@
 import { createClient } from "./supabase/client"
 import { Store, StoreMenuItem, SellerProfile, OptionGroup, VariantCombination } from "./seller-types"
+import { optimizeImage } from "./image-optimizer"
 
 export const DEFAULT_STORES: Store[] = []
 
@@ -461,23 +462,33 @@ export async function generateUniqueBarcode(prefix = "200"): Promise<string> {
   return `${prefix}${ts}`
 }
 
-// ── 4. Supabase Storage Image Upload ─────────────────────────────────────────
+// ── 4. Supabase Storage Image Upload with Automatic Client-Side Optimization ─
 export async function uploadStoreImage(
-  file: File,
+  file: File | Blob,
   folder: "products" | "stores" = "products"
 ): Promise<{ url: string | null; error: string | null }> {
   try {
     const supabase = createClient()
-    const fileExt = file.name.split(".").pop() || "jpg"
-    const cleanFileName = file.name
+
+    // Automatically optimize, compress, and convert image (max 1200px, 85% quality, WebP)
+    const { file: optimizedFile, format } = await optimizeImage(file, {
+      maxWidth: 1200,
+      maxHeight: 1200,
+      quality: 0.85,
+      preferredFormat: "image/webp",
+    })
+
+    const ext = format === "image/webp" ? "webp" : "jpg"
+    const baseName = (optimizedFile.name || "image")
       .replace(/\.[^/.]+$/, "")
       .replace(/[^a-zA-Z0-9_-]/g, "_")
-    const filePath = `${folder}/${Date.now()}_${cleanFileName}.${fileExt}`
+    const filePath = `${folder}/${Date.now()}_${baseName}.${ext}`
 
     const { error: uploadError } = await supabase.storage
       .from("store-images")
-      .upload(filePath, file, {
-        cacheControl: "3600",
+      .upload(filePath, optimizedFile, {
+        cacheControl: "31536000, immutable",
+        contentType: format,
         upsert: true,
       })
 

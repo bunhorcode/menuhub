@@ -746,6 +746,7 @@ export default function MenuHubScreen() {
                       src={rest.image}
                       alt={rest.name}
                       fill
+                      loading="eager"
                       priority={idx < 4}
                       sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                       className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
@@ -857,6 +858,7 @@ export default function MenuHubScreen() {
                           src={item.image}
                           alt={item.name}
                           fill
+                          loading={idx < 4 ? "eager" : "lazy"}
                           priority={idx < 4}
                           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                           className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"

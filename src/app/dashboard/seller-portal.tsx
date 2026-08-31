@@ -443,8 +443,9 @@ export function SellerPortal({ user }: { user: User }) {
   const handleCropComplete = async (blob: Blob) => {
     const target = cropperTarget || "product"
     const folder = target === "store" ? "stores" : "products"
-    const fileName = `${target}_cropped_${Date.now()}.jpg`
-    const file = new File([blob], fileName, { type: "image/jpeg" })
+    const ext = blob.type.includes("webp") ? "webp" : "jpg"
+    const fileName = `${target}_cropped_${Date.now()}.${ext}`
+    const file = new File([blob], fileName, { type: blob.type || "image/jpeg" })
 
     if (target === "store") {
       setIsUploadingStoreImg(true)
@@ -1152,7 +1153,8 @@ export function SellerPortal({ user }: { user: User }) {
                         src={store.image}
                         alt={store.name}
                         fill
-                        priority={index === 0}
+                        loading="eager"
+                        priority={index < 4}
                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                         className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
                       />
@@ -1297,6 +1299,7 @@ export function SellerPortal({ user }: { user: User }) {
                               src={item.image}
                               alt={item.name}
                               fill
+                              loading={idx < 4 ? "eager" : "lazy"}
                               priority={idx < 4}
                               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                               className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
@@ -2323,6 +2326,7 @@ export function SellerPortal({ user }: { user: User }) {
                       src={storeImage}
                       alt="Store Cover Preview"
                       fill
+                      loading="eager"
                       sizes="64px"
                       className="object-cover"
                     />
@@ -2701,6 +2705,7 @@ export function SellerPortal({ user }: { user: User }) {
                         src={itemImage}
                         alt="Product Preview"
                         fill
+                        loading="eager"
                         sizes="56px"
                         className="object-cover"
                       />

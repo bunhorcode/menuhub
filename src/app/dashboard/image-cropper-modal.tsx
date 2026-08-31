@@ -131,15 +131,28 @@ export function ImageCropperModal({
         renderHeight * scaleToCanvas
       )
 
+      // Export as high-efficiency WebP (fallback to JPEG if needed)
       canvas.toBlob(
         async (blob) => {
           if (blob) {
             await onCropComplete(blob)
+          } else {
+            canvas.toBlob(
+              async (fallbackBlob) => {
+                if (fallbackBlob) {
+                  await onCropComplete(fallbackBlob)
+                }
+                setIsProcessing(false)
+              },
+              "image/jpeg",
+              0.85
+            )
+            return
           }
           setIsProcessing(false)
         },
-        "image/jpeg",
-        0.92
+        "image/webp",
+        0.85
       )
     } catch (err) {
       console.error("Crop error:", err)
