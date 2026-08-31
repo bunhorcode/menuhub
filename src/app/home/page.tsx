@@ -106,6 +106,17 @@ export default function MenuHubScreen() {
   const [filterInStockOnly, setFilterInStockOnly] = useState<boolean>(false)
   const [randomSeed, setRandomSeed] = useState<number>(() => Math.floor(Math.random() * 100000))
   const [isLoadingMarketplace, setIsLoadingMarketplace] = useState<boolean>(true)
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState<boolean>(false)
+
+  // Count active filters
+  const activeFiltersCount = useMemo(() => {
+    let count = 0
+    if (selectedCategoryPill !== "All") count++
+    if (filterStoreId !== "all") count++
+    if (filterInStockOnly) count++
+    if (homeSortBy !== "random") count++
+    return count
+  }, [selectedCategoryPill, filterStoreId, filterInStockOnly, homeSortBy])
 
   // Item detail modal state (for products with options/variants)
   const [detailItem, setDetailItem] = useState<StoreMenuItem | null>(null)
@@ -755,29 +766,11 @@ export default function MenuHubScreen() {
       {/* Main Content Area */}
       {!activeRestaurant ? (
         <main className="flex-1 max-w-[1200px] w-full mx-auto px-3 sm:px-6 py-6 sm:py-8">
-          {/* Hero Banner with Search and Categories */}
-          <div className="bg-white border border-[#eef4ff] rounded-2xl p-5 sm:p-8 mb-6 shadow-xs">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0d1c2d]">
-                  Explore Products, Boutiques & Digital Stores
-                </h2>
-                <p className="text-xs sm:text-sm text-[#76777d] mt-1">
-                  Discover fashion apparel, groceries, cafes, electronics, cosmetics, and lifestyle goods across all stores.
-                </p>
-              </div>
-              <Link
-                href="/dashboard"
-                className="self-start md:self-auto shrink-0 bg-emerald-50 hover:bg-emerald-100 text-[#006c49] border border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5"
-              >
-                <span>🏬</span>
-                <span>Open Store & Sell</span>
-              </Link>
-            </div>
-
-            {/* Search Input */}
-            <div className="mt-5 flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
+          {/* Search and Categories Bar */}
+          <div className="bg-white border border-[#eef4ff] rounded-2xl p-4 sm:p-5 mb-5 shadow-xs">
+            {/* Search Input + Open Store Action */}
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="relative flex-1 w-full">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-[#76777d]">
                   🔍
                 </span>
@@ -797,6 +790,13 @@ export default function MenuHubScreen() {
                   </button>
                 )}
               </div>
+              <Link
+                href="/dashboard"
+                className="hidden sm:flex shrink-0 bg-emerald-50 hover:bg-emerald-100 text-[#006c49] border border-emerald-300 px-4 h-11 sm:h-12 rounded-xl text-xs font-bold transition-all shadow-2xs items-center gap-1.5"
+              >
+                <span>🏬</span>
+                <span>Open Store & Sell</span>
+              </Link>
             </div>
 
             {/* Category Filter Pills */}
@@ -821,9 +821,9 @@ export default function MenuHubScreen() {
           </div>
 
           {/* Unified Filter & Discovery Control Bar */}
-          <div className="bg-white border border-[#eef4ff] rounded-2xl p-3 sm:p-4 mb-6 shadow-xs flex flex-col gap-3">
-            {/* Top row: View Mode Switcher + Items count */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
+          <div className="bg-white border border-[#eef4ff] rounded-2xl p-3 sm:p-4 mb-6 shadow-xs flex flex-col gap-2.5">
+            {/* Top row: View Mode Switcher + Shuffle + Filter Icon Button */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
               {/* View Mode Switcher (All Products vs Stores) */}
               <div className="flex items-center bg-[#f0f4fc] p-1 rounded-xl">
                 <button
@@ -836,7 +836,7 @@ export default function MenuHubScreen() {
                   }`}
                 >
                   <span>🛍️ All Products</span>
-                  <span className="text-[10px] bg-emerald-100 text-[#006c49] px-1.5 py-0.2 rounded-full">
+                  <span className="text-[10px] bg-emerald-100 text-[#006c49] px-1.5 py-0.2 rounded-full font-bold">
                     {filteredAndSortedItems.length}
                   </span>
                 </button>
@@ -850,100 +850,149 @@ export default function MenuHubScreen() {
                   }`}
                 >
                   <span>🏬 Stores</span>
-                  <span className="text-[10px] bg-emerald-100 text-[#006c49] px-1.5 py-0.2 rounded-full">
+                  <span className="text-[10px] bg-emerald-100 text-[#006c49] px-1.5 py-0.2 rounded-full font-bold">
                     {filteredRestaurants.length}
                   </span>
                 </button>
               </div>
 
-              {/* Quick Shuffle Feed Button */}
-              {homeBrowseMode === "items" && (
-                <button
-                  type="button"
-                  onClick={() => setRandomSeed(Math.floor(Math.random() * 100000))}
-                  className="text-xs font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all shadow-2xs flex items-center gap-1"
-                  title="Randomize and discover new products from different stores"
-                >
-                  <span>🎲</span>
-                  <span>Shuffle Feed</span>
-                </button>
-              )}
-            </div>
-
-            {/* Filter and Sort Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Store Filter Selector (in Items Mode) */}
-                {homeBrowseMode === "items" && stores.length > 0 && (
-                  <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
-                    <span className="text-xs mr-1">🏪</span>
-                    <select
-                      value={filterStoreId}
-                      onChange={(e) => setFilterStoreId(e.target.value)}
-                      className="bg-transparent text-xs font-semibold text-[#0d1c2d] outline-none cursor-pointer pr-1"
-                    >
-                      <option value="all">All Stores ({stores.length})</option>
-                      {stores.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Sort By Selector */}
-                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
-                  <span className="text-xs mr-1">↕️</span>
-                  <span className="text-[11px] font-semibold text-slate-500 mr-1">Sort:</span>
-                  <select
-                    value={homeSortBy}
-                    onChange={(e) => setHomeSortBy(e.target.value as typeof homeSortBy)}
-                    className="bg-transparent text-xs font-semibold text-[#0d1c2d] outline-none cursor-pointer pr-1"
-                  >
-                    <option value="random">🎲 Discover (Random)</option>
-                    <option value="price_asc">💲 Price: Low to High</option>
-                    <option value="price_desc">💰 Price: High to Low</option>
-                    <option value="rating">⭐ Top Store Rating</option>
-                    <option value="name_asc">🔤 Name: A to Z</option>
-                  </select>
-                </div>
-
-                {/* In-Stock Only Toggle */}
+              {/* Action Buttons: Shuffle Feed + Filter Icon Button */}
+              <div className="flex items-center gap-2">
                 {homeBrowseMode === "items" && (
                   <button
                     type="button"
-                    onClick={() => setFilterInStockOnly(!filterInStockOnly)}
-                    className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5 ${
-                      filterInStockOnly
-                        ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold shadow-2xs"
-                        : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                    }`}
+                    onClick={() => setRandomSeed(Math.floor(Math.random() * 100000))}
+                    className="text-xs font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all shadow-2xs flex items-center gap-1"
+                    title="Randomize and discover new products from different stores"
                   >
-                    <span>{filterInStockOnly ? "✓" : "○"}</span>
-                    <span>In Stock Only</span>
+                    <span>🎲</span>
+                    <span className="hidden sm:inline">Shuffle</span>
                   </button>
                 )}
-              </div>
 
-              {/* Active Filter Clear Button */}
-              {(selectedCategoryPill !== "All" || filterStoreId !== "all" || filterInStockOnly || searchQuery || homeSortBy !== "random") && (
+                {/* Filter Icon Button (Sliders Icon with Active Count Badge) */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedCategoryPill("All")
-                    setFilterStoreId("all")
-                    setFilterInStockOnly(false)
-                    setSearchQuery("")
-                    setHomeSortBy("random")
-                  }}
-                  className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1 ml-auto"
+                  onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border shadow-2xs cursor-pointer ${
+                    isFilterPanelOpen || activeFiltersCount > 0
+                      ? "bg-emerald-50 text-[#006c49] border-emerald-300 ring-2 ring-emerald-200/60"
+                      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                  }`}
+                  title="Toggle Filter & Sort Options"
                 >
-                  <span>✕</span>
-                  <span>Reset Filters</span>
+                  {/* Modern Sliders Filter SVG Icon */}
+                  <svg
+                    className="w-3.5 h-3.5 shrink-0 text-[#006c49]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="4" y1="21" x2="4" y2="14" />
+                    <line x1="4" y1="10" x2="4" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12" y2="3" />
+                    <line x1="20" y1="21" x2="20" y2="16" />
+                    <line x1="20" y1="12" x2="20" y2="3" />
+                    <line x1="1" y1="14" x2="7" y2="14" />
+                    <line x1="9" y1="8" x2="15" y2="8" />
+                    <line x1="17" y1="16" x2="23" y2="16" />
+                  </svg>
+                  <span>Filter & Sort</span>
+                  {activeFiltersCount > 0 && (
+                    <span className="bg-[#006c49] text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                      {activeFiltersCount}
+                    </span>
+                  )}
+                  <span className="text-[9px] text-slate-400 font-bold ml-0.5">
+                    {isFilterPanelOpen ? "▲" : "▼"}
+                  </span>
                 </button>
-              )}
+              </div>
             </div>
+
+            {/* Expandable Hidden Filter Drawer / Panel */}
+            {isFilterPanelOpen && (
+              <div className="pt-3 border-t border-slate-100 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Store Filter Selector (in Items Mode) */}
+                    {homeBrowseMode === "items" && stores.length > 0 && (
+                      <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 focus-within:border-[#006c49] focus-within:bg-white transition-all">
+                        <span className="text-xs mr-1">🏪</span>
+                        <span className="text-[11px] font-semibold text-slate-500 mr-1">Store:</span>
+                        <select
+                          value={filterStoreId}
+                          onChange={(e) => setFilterStoreId(e.target.value)}
+                          className="bg-transparent text-xs font-semibold text-[#0d1c2d] outline-none cursor-pointer pr-1"
+                        >
+                          <option value="all">All Stores ({stores.length})</option>
+                          {stores.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Sort By Selector */}
+                    <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 focus-within:border-[#006c49] focus-within:bg-white transition-all">
+                      <span className="text-xs mr-1">↕️</span>
+                      <span className="text-[11px] font-semibold text-slate-500 mr-1">Sort:</span>
+                      <select
+                        value={homeSortBy}
+                        onChange={(e) => setHomeSortBy(e.target.value as typeof homeSortBy)}
+                        className="bg-transparent text-xs font-semibold text-[#0d1c2d] outline-none cursor-pointer pr-1"
+                      >
+                        <option value="random">🎲 Discover (Random)</option>
+                        <option value="price_asc">💲 Price: Low to High</option>
+                        <option value="price_desc">💰 Price: High to Low</option>
+                        <option value="rating">⭐ Top Store Rating</option>
+                        <option value="name_asc">🔤 Name: A to Z</option>
+                      </select>
+                    </div>
+
+                    {/* In-Stock Only Toggle */}
+                    {homeBrowseMode === "items" && (
+                      <button
+                        type="button"
+                        onClick={() => setFilterInStockOnly(!filterInStockOnly)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5 ${
+                          filterInStockOnly
+                            ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold shadow-2xs"
+                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        <span>{filterInStockOnly ? "✓" : "○"}</span>
+                        <span>In Stock Only</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Active Filter Clear Button */}
+                  {(activeFiltersCount > 0 || searchQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCategoryPill("All")
+                        setFilterStoreId("all")
+                        setFilterInStockOnly(false)
+                        setSearchQuery("")
+                        setHomeSortBy("random")
+                      }}
+                      className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline flex items-center gap-1 ml-auto py-1"
+                    >
+                      <span>✕</span>
+                      <span>Reset All Filters</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Content Feed: Products Mode vs Stores Mode */}
