@@ -45,6 +45,31 @@ function cartKey(itemId: string, selectedOptions?: SelectedOption[]): string {
   return `${itemId}__${getComboKey(selectedOptions)}`
 }
 
+// Helper to compute overall stock health for an item
+function getItemStockSummary(
+  item: StoreMenuItem
+): { isSoldOut: boolean; isLowStock: boolean; stockCount: number } {
+  if (!item.available) {
+    return { isSoldOut: true, isLowStock: false, stockCount: 0 }
+  }
+  if (item.variants && item.variants.length > 0) {
+    const total = item.variants.reduce((sum, v) => sum + (v.stock || 0), 0)
+    return {
+      isSoldOut: total <= 0,
+      isLowStock: total > 0 && total <= 5,
+      stockCount: total,
+    }
+  }
+  if (item.stock !== undefined) {
+    return {
+      isSoldOut: item.stock <= 0,
+      isLowStock: item.stock > 0 && item.stock <= 5,
+      stockCount: item.stock,
+    }
+  }
+  return { isSoldOut: false, isLowStock: false, stockCount: 50 }
+}
+
 
 const CATEGORY_PILLS = [
   { name: "All", icon: "🎯" },
@@ -63,6 +88,7 @@ const CATEGORY_PILLS = [
 
 export default function MenuHubScreen() {
   const [stores, setStores] = useState<Store[]>([])
+  const [allMarketplaceItems, setAllMarketplaceItems] = useState<StoreMenuItem[]>([])
   const [selectedCategoryPill, setSelectedCategoryPill] = useState("All")
   const [searchQuery, setSearchQuery] = useState("")
   const [activeRestaurant, setActiveRestaurant] = useState<Store | null>(null)
@@ -72,6 +98,14 @@ export default function MenuHubScreen() {
   const [isCartHydrated, setIsCartHydrated] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [supabaseStatus, setSupabaseStatus] = useState<string>("Checking...")
+
+  // Marketplace Browsing & Filter States
+  const [homeBrowseMode, setHomeBrowseMode] = useState<"items" | "stores">("items")
+  const [homeSortBy, setHomeSortBy] = useState<"random" | "price_asc" | "price_desc" | "rating" | "name_asc">("random")
+  const [filterStoreId, setFilterStoreId] = useState<string>("all")
+  const [filterInStockOnly, setFilterInStockOnly] = useState<boolean>(false)
+  const [randomSeed, setRandomSeed] = useState<number>(() => Math.floor(Math.random() * 100000))
+  const [isLoadingMarketplace, setIsLoadingMarketplace] = useState<boolean>(true)
 
   // Item detail modal state (for products with options/variants)
   const [detailItem, setDetailItem] = useState<StoreMenuItem | null>(null)
@@ -161,13 +195,24 @@ export default function MenuHubScreen() {
     }
   }, [cart, user, isCartHydrated])
 
-  // Load stores from Supabase
+  // Load stores and all marketplace items in parallel
   useEffect(() => {
-    const loadStores = async () => {
-      const loadedStores = await getStores()
-      setStores(loadedStores)
+    const loadMarketplaceData = async () => {
+      setIsLoadingMarketplace(true)
+      try {
+        const [loadedStores, loadedItems] = await Promise.all([
+          getStores(),
+          getMenuItems(),
+        ])
+        setStores(loadedStores)
+        setAllMarketplaceItems(loadedItems)
+      } catch (e) {
+        console.error("Error loading marketplace data:", e)
+      } finally {
+        setIsLoadingMarketplace(false)
+      }
     }
-    loadStores()
+    loadMarketplaceData()
   }, [])
 
   // When active restaurant changes, load its dishes from Supabase + seller Telegram info
@@ -186,7 +231,6 @@ export default function MenuHubScreen() {
     }
     loadDishes()
   }, [activeRestaurant])
-
 
   // Verify Supabase integration & load authenticated user
   useEffect(() => {
@@ -220,14 +264,89 @@ export default function MenuHubScreen() {
         selectedCategoryPill === "All" ||
         rest.category.toLowerCase().includes(selectedCategoryPill.toLowerCase()) ||
         selectedCategoryPill.toLowerCase().includes(rest.category.toLowerCase())
-      const q = searchQuery.toLowerCase()
+      const q = searchQuery.toLowerCase().trim()
       const matchesSearch =
+        !q ||
         rest.name.toLowerCase().includes(q) ||
         rest.cuisine.toLowerCase().includes(q) ||
         rest.category.toLowerCase().includes(q)
       return matchesCategory && matchesSearch
     })
   }, [stores, selectedCategoryPill, searchQuery])
+
+  // Filter & Sort All Marketplace Items across stores (Randomized by default)
+  const filteredAndSortedItems = useMemo(() => {
+    // 1. Filter
+    const filtered = allMarketplaceItems.filter((item) => {
+      // Category filter
+      const matchesCategory =
+        selectedCategoryPill === "All" ||
+        item.category.toLowerCase().includes(selectedCategoryPill.toLowerCase()) ||
+        selectedCategoryPill.toLowerCase().includes(item.category.toLowerCase())
+
+      // Store filter
+      const matchesStore = filterStoreId === "all" || item.storeId === filterStoreId
+
+      // In stock filter
+      const stockSummary = getItemStockSummary(item)
+      const matchesStock = !filterInStockOnly || !stockSummary.isSoldOut
+
+      // Search query filter (matches item name, description, category, tags, or store name)
+      const q = searchQuery.toLowerCase().trim()
+      const itemStore = stores.find((s) => s.id === item.storeId)
+      const storeName = itemStore?.name?.toLowerCase() || ""
+      const matchesSearch =
+        !q ||
+        item.name.toLowerCase().includes(q) ||
+        (item.description && item.description.toLowerCase().includes(q)) ||
+        item.category.toLowerCase().includes(q) ||
+        (item.tags && item.tags.some((t) => t.toLowerCase().includes(q))) ||
+        storeName.includes(q)
+
+      return matchesCategory && matchesStore && matchesStock && matchesSearch
+    })
+
+    // 2. Sort
+    const sorted = [...filtered]
+    if (homeSortBy === "random") {
+      // Deterministic pseudo-random shuffle based on randomSeed + item id hash
+      return sorted.sort((a, b) => {
+        const hashA = (a.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) * 17 + randomSeed) % 10007
+        const hashB = (b.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) * 17 + randomSeed) % 10007
+        return hashA - hashB
+      })
+    } else if (homeSortBy === "price_asc") {
+      return sorted.sort((a, b) => {
+        const priceA = a.variants && a.variants.length > 0
+          ? Math.min(...a.variants.map((v) => (v.sellPrice !== undefined && v.sellPrice > 0 ? v.sellPrice : a.price + (v.priceAdjustment || 0))))
+          : a.price
+        const priceB = b.variants && b.variants.length > 0
+          ? Math.min(...b.variants.map((v) => (v.sellPrice !== undefined && v.sellPrice > 0 ? v.sellPrice : b.price + (v.priceAdjustment || 0))))
+          : b.price
+        return priceA - priceB
+      })
+    } else if (homeSortBy === "price_desc") {
+      return sorted.sort((a, b) => {
+        const priceA = a.variants && a.variants.length > 0
+          ? Math.max(...a.variants.map((v) => (v.sellPrice !== undefined && v.sellPrice > 0 ? v.sellPrice : a.price + (v.priceAdjustment || 0))))
+          : a.price
+        const priceB = b.variants && b.variants.length > 0
+          ? Math.max(...b.variants.map((v) => (v.sellPrice !== undefined && v.sellPrice > 0 ? v.sellPrice : b.price + (v.priceAdjustment || 0))))
+          : b.price
+        return priceB - priceA
+      })
+    } else if (homeSortBy === "rating") {
+      return sorted.sort((a, b) => {
+        const storeA = stores.find((s) => s.id === a.storeId)?.rating || 5.0
+        const storeB = stores.find((s) => s.id === b.storeId)?.rating || 5.0
+        return storeB - storeA
+      })
+    } else if (homeSortBy === "name_asc") {
+      return sorted.sort((a, b) => a.name.localeCompare(b.name))
+    }
+
+    return sorted
+  }, [allMarketplaceItems, selectedCategoryPill, filterStoreId, filterInStockOnly, searchQuery, homeSortBy, randomSeed, stores])
 
   // ── Cart CRUD Operations ──────────────────────────────────────────────────
   const handleAddToCart = (
@@ -317,31 +436,6 @@ export default function MenuHubScreen() {
     if (confirm("Are you sure you want to clear your entire bag?")) {
       setCart([])
     }
-  }
-
-  // Helper to compute overall stock health for an item
-  const getItemStockSummary = (
-    item: StoreMenuItem
-  ): { isSoldOut: boolean; isLowStock: boolean; stockCount: number } => {
-    if (!item.available) {
-      return { isSoldOut: true, isLowStock: false, stockCount: 0 }
-    }
-    if (item.variants && item.variants.length > 0) {
-      const total = item.variants.reduce((sum, v) => sum + (v.stock || 0), 0)
-      return {
-        isSoldOut: total <= 0,
-        isLowStock: total > 0 && total <= 5,
-        stockCount: total,
-      }
-    }
-    if (item.stock !== undefined) {
-      return {
-        isSoldOut: item.stock <= 0,
-        isLowStock: item.stock > 0 && item.stock <= 5,
-        stockCount: item.stock,
-      }
-    }
-    return { isSoldOut: false, isLowStock: false, stockCount: 50 }
   }
 
   // Helper to check if an option value is out of stock (multi-attribute combination aware)
@@ -660,33 +754,44 @@ export default function MenuHubScreen() {
 
       {/* Main Content Area */}
       {!activeRestaurant ? (
-        <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-8">
+        <main className="flex-1 max-w-[1200px] w-full mx-auto px-3 sm:px-6 py-6 sm:py-8">
           {/* Hero Banner with Search and Categories */}
-          <div className="bg-white border border-[#eef4ff] rounded-2xl p-6 sm:p-8 mb-8 shadow-xs">
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0d1c2d]">
-              Explore Stores, Boutiques & Digital Menus
-            </h2>
-            <p className="text-xs sm:text-sm text-[#76777d] mt-1">
-              Discover fashion boutiques, organic grocery markets, specialty cafes, tech hubs, and gourmet dining.
-            </p>
+          <div className="bg-white border border-[#eef4ff] rounded-2xl p-5 sm:p-8 mb-6 shadow-xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0d1c2d]">
+                  Explore Products, Boutiques & Digital Stores
+                </h2>
+                <p className="text-xs sm:text-sm text-[#76777d] mt-1">
+                  Discover fashion apparel, groceries, cafes, electronics, cosmetics, and lifestyle goods across all stores.
+                </p>
+              </div>
+              <Link
+                href="/dashboard"
+                className="self-start md:self-auto shrink-0 bg-emerald-50 hover:bg-emerald-100 text-[#006c49] border border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5"
+              >
+                <span>🏬</span>
+                <span>Open Store & Sell</span>
+              </Link>
+            </div>
 
             {/* Search Input */}
-            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <div className="mt-5 flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-[#76777d]">
                   🔍
                 </span>
                 <input
                   type="text"
-                  placeholder="Search stores, fashion, groceries, cafes, gadgets, beauty..."
+                  placeholder="Search products, stores, fashion, groceries, gadgets, beauty..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-12 pl-10 pr-10 bg-[#f8f9ff] border border-[#eef4ff] rounded-xl text-sm text-[#0d1c2d] placeholder-[#76777d] focus:outline-none focus:border-[#006c49] focus:bg-white transition-all"
+                  className="w-full h-11 sm:h-12 pl-10 pr-10 bg-[#f8f9ff] border border-[#eef4ff] rounded-xl text-xs sm:text-sm text-[#0d1c2d] placeholder-[#76777d] focus:outline-none focus:border-[#006c49] focus:bg-white transition-all"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-[#76777d]"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-[#76777d] hover:text-[#0d1c2d]"
                   >
                     ✕
                   </button>
@@ -695,14 +800,14 @@ export default function MenuHubScreen() {
             </div>
 
             {/* Category Filter Pills */}
-            <div className="flex items-center gap-2.5 mt-5 overflow-x-auto pb-1 scrollbar-none">
+            <div className="flex items-center gap-2 mt-4 overflow-x-auto pb-1 scrollbar-none">
               {CATEGORY_PILLS.map((pill) => {
                 const isActive = selectedCategoryPill === pill.name
                 return (
                   <button
                     key={pill.name}
                     onClick={() => setSelectedCategoryPill(pill.name)}
-                    className={`px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all ${isActive
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all ${isActive
                       ? "bg-[#006c49] text-white shadow-xs"
                       : "bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#0d1c2d]"
                       }`}
@@ -715,73 +820,363 @@ export default function MenuHubScreen() {
             </div>
           </div>
 
-          {/* Store Cards Grid — Compact Taobao-style */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3 mb-12">
-            {filteredRestaurants.length === 0 ? (
-              <div className="col-span-full text-center py-16 px-4 bg-white rounded-2xl border border-[#eef4ff] shadow-xs">
-                <span className="text-4xl inline-block mb-2">🏬</span>
-                <h3 className="text-base font-bold text-[#0d1c2d]">No Stores Available Yet</h3>
-                <p className="text-xs text-[#76777d] mt-1 max-w-sm mx-auto">
-                  {searchQuery || selectedCategoryPill !== "All"
-                    ? "No stores match your current filters. Try changing your search keywords."
-                    : "Become a seller and open your digital store & catalog today!"}
-                </p>
-                <Link
-                  href="/dashboard"
-                  className="inline-block mt-4 bg-[#006c49] hover:bg-[#005236] text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-xs"
+          {/* Unified Filter & Discovery Control Bar */}
+          <div className="bg-white border border-[#eef4ff] rounded-2xl p-3 sm:p-4 mb-6 shadow-xs flex flex-col gap-3">
+            {/* Top row: View Mode Switcher + Items count */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
+              {/* View Mode Switcher (All Products vs Stores) */}
+              <div className="flex items-center bg-[#f0f4fc] p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setHomeBrowseMode("items")}
+                  className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    homeBrowseMode === "items"
+                      ? "bg-white text-[#006c49] shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
                 >
-                  + Open Store in Seller Studio
-                </Link>
+                  <span>🛍️ All Products</span>
+                  <span className="text-[10px] bg-emerald-100 text-[#006c49] px-1.5 py-0.2 rounded-full">
+                    {filteredAndSortedItems.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHomeBrowseMode("stores")}
+                  className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    homeBrowseMode === "stores"
+                      ? "bg-white text-[#006c49] shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>🏬 Stores</span>
+                  <span className="text-[10px] bg-emerald-100 text-[#006c49] px-1.5 py-0.2 rounded-full">
+                    {filteredRestaurants.length}
+                  </span>
+                </button>
               </div>
-            ) : (
-              filteredRestaurants.map((rest, idx) => (
-                <div
-                  key={rest.id}
-                  onClick={() => setActiveRestaurant(rest)}
-                  className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer group"
+
+              {/* Quick Shuffle Feed Button */}
+              {homeBrowseMode === "items" && (
+                <button
+                  type="button"
+                  onClick={() => setRandomSeed(Math.floor(Math.random() * 100000))}
+                  className="text-xs font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all shadow-2xs flex items-center gap-1"
+                  title="Randomize and discover new products from different stores"
                 >
-                  {/* Card Image - Square Frame with Full Image */}
-                  <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
-                    <Image
-                      src={rest.image}
-                      alt={rest.name}
-                      fill
-                      loading="eager"
-                      priority={idx < 4}
-                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                      className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
-                    />
+                  <span>🎲</span>
+                  <span>Shuffle Feed</span>
+                </button>
+              )}
+            </div>
 
-                    {/* Category Badge */}
-                    <div className="absolute top-2.5 left-2.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md flex items-center gap-1 text-[10px] font-bold shadow-xs">
-                      <span>{rest.badgeIcon}</span>
-                      <span className="text-[#0d1c2d] hidden sm:inline">{rest.category}</span>
-                    </div>
-
-                    {/* Rating */}
-                    <div className="absolute bottom-2.5 right-2.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md text-[10px] font-bold text-[#0d1c2d] shadow-xs flex items-center gap-0.5">
-                      <span className="text-[#006c49]">★</span>
-                      <span>{rest.rating}</span>
-                    </div>
+            {/* Filter and Sort Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Store Filter Selector (in Items Mode) */}
+                {homeBrowseMode === "items" && stores.length > 0 && (
+                  <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
+                    <span className="text-xs mr-1">🏪</span>
+                    <select
+                      value={filterStoreId}
+                      onChange={(e) => setFilterStoreId(e.target.value)}
+                      className="bg-transparent text-xs font-semibold text-[#0d1c2d] outline-none cursor-pointer pr-1"
+                    >
+                      <option value="all">All Stores ({stores.length})</option>
+                      {stores.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
+                )}
 
-                  {/* Card Info */}
-                  <div className="p-2.5 sm:p-3">
-                    <h3 className="text-xs sm:text-sm font-bold text-[#0d1c2d] leading-tight line-clamp-1">
-                      {rest.name}
-                    </h3>
-                    <p className="text-[10px] sm:text-[11px] text-[#76777d] mt-0.5 line-clamp-1">
-                      {rest.cuisine} · {rest.priceRange}
-                    </p>
-                    <div className="mt-2 bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#00714d] font-semibold text-[10px] sm:text-[11px] py-1.5 rounded-lg flex items-center justify-center gap-1 transition-all">
-                      <span>View Store</span>
-                      <span>→</span>
-                    </div>
-                  </div>
+                {/* Sort By Selector */}
+                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
+                  <span className="text-xs mr-1">↕️</span>
+                  <span className="text-[11px] font-semibold text-slate-500 mr-1">Sort:</span>
+                  <select
+                    value={homeSortBy}
+                    onChange={(e) => setHomeSortBy(e.target.value as typeof homeSortBy)}
+                    className="bg-transparent text-xs font-semibold text-[#0d1c2d] outline-none cursor-pointer pr-1"
+                  >
+                    <option value="random">🎲 Discover (Random)</option>
+                    <option value="price_asc">💲 Price: Low to High</option>
+                    <option value="price_desc">💰 Price: High to Low</option>
+                    <option value="rating">⭐ Top Store Rating</option>
+                    <option value="name_asc">🔤 Name: A to Z</option>
+                  </select>
                 </div>
-              ))
-            )}
+
+                {/* In-Stock Only Toggle */}
+                {homeBrowseMode === "items" && (
+                  <button
+                    type="button"
+                    onClick={() => setFilterInStockOnly(!filterInStockOnly)}
+                    className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5 ${
+                      filterInStockOnly
+                        ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold shadow-2xs"
+                        : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span>{filterInStockOnly ? "✓" : "○"}</span>
+                    <span>In Stock Only</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Active Filter Clear Button */}
+              {(selectedCategoryPill !== "All" || filterStoreId !== "all" || filterInStockOnly || searchQuery || homeSortBy !== "random") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategoryPill("All")
+                    setFilterStoreId("all")
+                    setFilterInStockOnly(false)
+                    setSearchQuery("")
+                    setHomeSortBy("random")
+                  }}
+                  className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1 ml-auto"
+                >
+                  <span>✕</span>
+                  <span>Reset Filters</span>
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Content Feed: Products Mode vs Stores Mode */}
+          {isLoadingMarketplace ? (
+            <div className="text-center py-20 bg-white rounded-2xl border border-[#eef4ff] shadow-xs">
+              <div className="w-8 h-8 border-3 border-[#006c49] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-xs font-bold text-[#0d1c2d]">Loading Marketplace...</p>
+            </div>
+          ) : homeBrowseMode === "items" ? (
+            /* 🛍️ All Products Marketplace Feed */
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3.5 mb-12">
+              {filteredAndSortedItems.length === 0 ? (
+                <div className="col-span-full text-center py-16 px-4 bg-white rounded-2xl border border-[#eef4ff] shadow-xs">
+                  <span className="text-4xl inline-block mb-2">🛍️</span>
+                  <h3 className="text-base font-bold text-[#0d1c2d]">No Products Found</h3>
+                  <p className="text-xs text-[#76777d] mt-1 max-w-sm mx-auto">
+                    {searchQuery || selectedCategoryPill !== "All" || filterStoreId !== "all" || filterInStockOnly
+                      ? "No products match your current filters. Try changing your search or resetting filters."
+                      : "No products have been listed by sellers yet."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategoryPill("All")
+                      setFilterStoreId("all")
+                      setFilterInStockOnly(false)
+                      setSearchQuery("")
+                    }}
+                    className="inline-block mt-4 bg-[#006c49] hover:bg-[#005236] text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-xs"
+                  >
+                    Reset All Filters
+                  </button>
+                </div>
+              ) : (
+                filteredAndSortedItems.map((item, idx) => {
+                  const stockSummary = getItemStockSummary(item)
+                  const itemStore = stores.find((s) => s.id === item.storeId)
+
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => !stockSummary.isSoldOut && handleProductClick(item)}
+                      className={`bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between group ${
+                        stockSummary.isSoldOut ? "opacity-75 cursor-not-allowed" : "cursor-pointer"
+                      }`}
+                    >
+                      <div>
+                        {/* Compact Square Image Frame */}
+                        <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
+                          <Image
+                            src={item.image}
+                            alt={item.name}
+                            fill
+                            loading={idx < 4 ? "eager" : "lazy"}
+                            priority={idx < 4}
+                            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                            className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
+                          />
+
+                          {/* Out of Stock Overlay */}
+                          {stockSummary.isSoldOut && (
+                            <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center">
+                              <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                                Sold Out
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Low Stock Urgent Badge */}
+                          {!stockSummary.isSoldOut && stockSummary.isLowStock && (
+                            <div className="absolute top-2 right-2 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-xs animate-pulse">
+                              Only {stockSummary.stockCount} left!
+                            </div>
+                          )}
+
+                          {/* Store Name Badge on Item */}
+                          {itemStore && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveRestaurant(itemStore)
+                              }}
+                              className="absolute bottom-2 left-2 bg-white/95 hover:bg-white backdrop-blur-xs border border-slate-200/80 px-2 py-0.5 rounded-md text-[10px] font-bold text-[#0d1c2d] shadow-xs flex items-center gap-1 max-w-[85%] truncate transition-all group-hover:border-[#006c49]"
+                              title={`View ${itemStore.name} Storefront`}
+                            >
+                              <span>{itemStore.badgeIcon || "🏪"}</span>
+                              <span className="truncate">{itemStore.name}</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Content Details */}
+                        <div className="p-2.5 sm:p-3">
+                          <div className="flex items-center gap-1 mb-1">
+                            <span className="text-[9px] font-bold text-[#00714d] bg-[#eef4ff] px-1.5 py-0.2 rounded truncate max-w-[120px]">
+                              {item.category}
+                            </span>
+                          </div>
+
+                          <h3 className="font-bold text-xs sm:text-sm text-[#0d1c2d] leading-tight line-clamp-1">
+                            {item.name}
+                          </h3>
+
+                          {item.description && (
+                            <p className="text-[10px] text-[#76777d] mt-1 line-clamp-1 leading-tight">
+                              {item.description}
+                            </p>
+                          )}
+
+                          {/* Price & Variant Specs */}
+                          <div className="mt-1.5 flex items-baseline justify-between gap-1 flex-wrap">
+                            <span className="font-bold text-sm sm:text-base text-[#006c49]">
+                              {item.variants && item.variants.length > 0 ? (
+                                (() => {
+                                  const prices = item.variants
+                                    .map((v) =>
+                                      v.sellPrice !== undefined && v.sellPrice > 0
+                                        ? v.sellPrice
+                                        : item.price + (v.priceAdjustment || 0)
+                                    )
+                                    .filter((p) => p > 0)
+                                  if (prices.length === 0) return `$${item.price.toFixed(2)}`
+                                  const min = Math.min(...prices)
+                                  const max = Math.max(...prices)
+                                  return min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`
+                                })()
+                              ) : (
+                                `$${item.price.toFixed(2)}`
+                              )}
+                            </span>
+                            {item.calories && (
+                              <span className="text-[9px] sm:text-[10px] text-[#76777d] bg-[#f8f9ff] px-1.5 py-0.5 rounded border border-[#eef4ff] truncate max-w-[90px]">
+                                {item.calories}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Add to Bag Button */}
+                      <div className="p-2.5 sm:p-3 pt-0">
+                        <button
+                          disabled={stockSummary.isSoldOut}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleProductClick(item)
+                          }}
+                          className="w-full bg-[#0d1c2d] hover:bg-[#131b2e] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 sm:py-2 rounded-lg flex items-center justify-center gap-1 transition-all"
+                        >
+                          <span>
+                            {stockSummary.isSoldOut
+                              ? "Sold Out"
+                              : item.options && item.options.length > 0
+                              ? "✨ Select Options"
+                              : "+ Add to Bag"}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          ) : (
+            /* 🏬 Stores & Brands Grid */
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3 mb-12">
+              {filteredRestaurants.length === 0 ? (
+                <div className="col-span-full text-center py-16 px-4 bg-white rounded-2xl border border-[#eef4ff] shadow-xs">
+                  <span className="text-4xl inline-block mb-2">🏬</span>
+                  <h3 className="text-base font-bold text-[#0d1c2d]">No Stores Available Yet</h3>
+                  <p className="text-xs text-[#76777d] mt-1 max-w-sm mx-auto">
+                    {searchQuery || selectedCategoryPill !== "All"
+                      ? "No stores match your current filters. Try changing your search keywords."
+                      : "Become a seller and open your digital store & catalog today!"}
+                  </p>
+                  <Link
+                    href="/dashboard"
+                    className="inline-block mt-4 bg-[#006c49] hover:bg-[#005236] text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-xs"
+                  >
+                    + Open Store in Seller Studio
+                  </Link>
+                </div>
+              ) : (
+                filteredRestaurants.map((rest, idx) => (
+                  <div
+                    key={rest.id}
+                    onClick={() => setActiveRestaurant(rest)}
+                    className="bg-white rounded-xl border border-[#eef4ff] overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer group"
+                  >
+                    {/* Card Image - Square Frame with Full Image */}
+                    <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
+                      <Image
+                        src={rest.image}
+                        alt={rest.name}
+                        fill
+                        loading="eager"
+                        priority={idx < 4}
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                        className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
+                      />
+
+                      {/* Category Badge */}
+                      <div className="absolute top-2.5 left-2.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md flex items-center gap-1 text-[10px] font-bold shadow-xs">
+                        <span>{rest.badgeIcon}</span>
+                        <span className="text-[#0d1c2d] hidden sm:inline">{rest.category}</span>
+                      </div>
+
+                      {/* Rating */}
+                      <div className="absolute bottom-2.5 right-2.5 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md text-[10px] font-bold text-[#0d1c2d] shadow-xs flex items-center gap-0.5">
+                        <span className="text-[#006c49]">★</span>
+                        <span>{rest.rating}</span>
+                      </div>
+                    </div>
+
+                    {/* Card Info */}
+                    <div className="p-2.5 sm:p-3">
+                      <h3 className="text-xs sm:text-sm font-bold text-[#0d1c2d] leading-tight line-clamp-1">
+                        {rest.name}
+                      </h3>
+                      <p className="text-[10px] sm:text-[11px] text-[#76777d] mt-0.5 line-clamp-1">
+                        {rest.cuisine} · {rest.priceRange}
+                      </p>
+                      <div className="mt-2 bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#00714d] font-semibold text-[10px] sm:text-[11px] py-1.5 rounded-lg flex items-center justify-center gap-1 transition-all">
+                        <span>View Store</span>
+                        <span>→</span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </main>
       ) : (
         /* Store View when Clicking Explore Store */
