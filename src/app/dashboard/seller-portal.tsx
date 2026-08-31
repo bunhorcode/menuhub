@@ -371,6 +371,8 @@ export function SellerPortal({ user }: { user: User }) {
   const [itemCostPrice, setItemCostPrice] = useState<string>("")
   const [itemBarcode, setItemBarcode] = useState("")
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false)
+  // Per-SKU barcode scanner: stores the comboId of the variant being scanned, or null
+  const [skuBarcodeScannerComboId, setSkuBarcodeScannerComboId] = useState<string | null>(null)
   const [barcodeCopied, setBarcodeCopied] = useState(false)
   const [barcodeStatus, setBarcodeStatus] = useState<{
     isChecking: boolean
@@ -3103,34 +3105,60 @@ export function SellerPortal({ user }: { user: User }) {
 
                               {/* Tier 2: Photo + 4-Column Controls Grid */}
                               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                                {/* SKU Photo Box */}
-                                <div
-                                  className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200 group/img cursor-pointer shadow-2xs"
-                                  title="Upload photo for this SKU combination"
-                                >
-                                  {variant.image ? (
-                                    <Image
-                                      src={variant.image}
-                                      alt="SKU Photo"
-                                      fill
-                                      sizes="48px"
-                                      className="object-cover"
-                                    />
-                                  ) : (
-                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
-                                      <span className="text-base leading-none">📷</span>
-                                      <span className="text-[9px] font-bold mt-0.5">Photo</span>
-                                    </div>
-                                  )}
-                                  <label className="absolute inset-0 cursor-pointer opacity-0 group-hover/img:opacity-100 bg-black/60 flex items-center justify-center text-white text-[10px] font-bold transition-opacity">
-                                    {isUploadingVariantImg && skuUploadTargetComboId === variant.id ? "..." : "📸"}
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="hidden"
-                                      onChange={(e) => handleUploadSkuVariantImage(variant.id, e)}
-                                    />
-                                  </label>
+                                {/* SKU Photo Box with Gallery + Camera options */}
+                                <div className="flex flex-col items-center gap-1 shrink-0">
+                                  {/* Preview thumbnail */}
+                                  <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shadow-2xs">
+                                    {variant.image ? (
+                                      <Image
+                                        src={variant.image}
+                                        alt="SKU Photo"
+                                        fill
+                                        sizes="56px"
+                                        className="object-cover"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
+                                        <span className="text-xl leading-none">📷</span>
+                                        <span className="text-[9px] font-bold mt-0.5 text-slate-400">Photo</span>
+                                      </div>
+                                    )}
+                                    {isUploadingVariantImg && skuUploadTargetComboId === variant.id && (
+                                      <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
+                                        <span className="text-[10px] font-bold text-[#006c49]">...</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {/* Gallery + Camera Buttons */}
+                                  <div className="flex gap-1">
+                                    <label
+                                      className="cursor-pointer flex items-center gap-0.5 text-[9px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 px-1.5 py-1 rounded-lg transition-all"
+                                      title="Upload from gallery / files"
+                                    >
+                                      <span>🖼️</span>
+                                      <span>Gallery</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => handleUploadSkuVariantImage(variant.id, e)}
+                                      />
+                                    </label>
+                                    <label
+                                      className="cursor-pointer flex items-center gap-0.5 text-[9px] font-bold text-[#006c49] bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 px-1.5 py-1 rounded-lg transition-all"
+                                      title="Take a photo with camera"
+                                    >
+                                      <span>📸</span>
+                                      <span>Camera</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        capture="environment"
+                                        className="hidden"
+                                        onChange={(e) => handleUploadSkuVariantImage(variant.id, e)}
+                                      />
+                                    </label>
+                                  </div>
                                 </div>
 
                                 {/* Form Grid: Cost, Sell, Stock, Barcode */}
@@ -3216,23 +3244,40 @@ export function SellerPortal({ user }: { user: User }) {
                                     <label className="block text-[10px] font-bold text-slate-500 mb-1">
                                       SKU Barcode
                                     </label>
+                                    {/* Input row */}
                                     <div className="flex items-center h-8 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:border-[#006c49] transition-all">
                                       <input
                                         type="text"
                                         value={variant.barcode || ""}
                                         onChange={(e) => handleUpdateVariantBarcode(variant.id, e.target.value)}
-                                        placeholder="EAN-13 code"
+                                        placeholder="EAN-13 / SKU code"
                                         className="w-full h-full px-2 text-xs font-mono text-[#0d1c2d] outline-none"
                                       />
+                                      {/* ⚡ Auto-gen */}
                                       <button
                                         type="button"
                                         onClick={() => handleGenerateVariantBarcode(variant.id)}
                                         className="h-full px-2 text-[10px] font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border-l border-slate-200 transition-all whitespace-nowrap"
-                                        title="Auto-generate unique barcode"
+                                        title="Auto-generate unique EAN-13 barcode"
                                       >
-                                        ⚡ Gen
+                                        ⚡
+                                      </button>
+                                      {/* 📷 Camera scan */}
+                                      <button
+                                        type="button"
+                                        onClick={() => setSkuBarcodeScannerComboId(variant.id)}
+                                        className="h-full px-2 text-[10px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border-l border-slate-200 transition-all whitespace-nowrap"
+                                        title="Scan barcode with device camera"
+                                      >
+                                        📷
                                       </button>
                                     </div>
+                                    {/* Show barcode preview when scanned/generated */}
+                                    {variant.barcode && (
+                                      <p className="text-[9px] font-mono text-slate-400 mt-0.5 truncate" title={variant.barcode}>
+                                        {variant.barcode}
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -3317,6 +3362,20 @@ export function SellerPortal({ user }: { user: User }) {
           handleBarcodeRestockScan(scannedCode)
         }}
       />
+
+      {/* Per-SKU Variant Barcode Scanner Modal */}
+      {skuBarcodeScannerComboId !== null && (
+        <BarcodeScannerModal
+          isOpen={true}
+          onClose={() => setSkuBarcodeScannerComboId(null)}
+          onScan={(scannedCode) => {
+            if (skuBarcodeScannerComboId) {
+              handleUpdateVariantBarcode(skuBarcodeScannerComboId, scannedCode)
+            }
+            setSkuBarcodeScannerComboId(null)
+          }}
+        />
+      )}
     </div>
   )
 }
