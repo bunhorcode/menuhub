@@ -38,6 +38,7 @@ export interface VariantCombination {
   sellPrice?: number              // specific selling / retail price for this SKU (e.g. 25.00)
   priceAdjustment?: number        // delta adjustment (+/- e.g. +2.00)
   image?: string                  // variant combination image URL (optional)
+  barcode?: string                // specific barcode/SKU code for this combination
 }
 
 export interface SellerProfile {

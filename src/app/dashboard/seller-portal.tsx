@@ -96,7 +96,8 @@ export function SellerPortal({ user }: { user: User }) {
   // Cropper states
   const [isCropperOpen, setIsCropperOpen] = useState(false)
   const [cropperSrc, setCropperSrc] = useState<string | null>(null)
-  const [cropperTarget, setCropperTarget] = useState<"store" | "product" | "variant" | null>(null)
+  const [cropperTarget, setCropperTarget] = useState<"store" | "product" | "variant" | "sku" | null>(null)
+  const [skuUploadTargetComboId, setSkuUploadTargetComboId] = useState<string | null>(null)
 
   // Variant option builder state
   const [itemOptions, setItemOptions] = useState<OptionGroup[]>([])
@@ -142,7 +143,7 @@ export function SellerPortal({ user }: { user: User }) {
       return {
         id: Math.random().toString(36).substring(2, 10),
         options: combo,
-        stock: 5,
+        stock: 0,
         costPrice: undefined,
         sellPrice: parseFloat(itemPrice) || 0,
         priceAdjustment: 0,
@@ -178,9 +179,63 @@ export function SellerPortal({ user }: { user: User }) {
     setItemVariants((prev) => prev.map((v) => ({ ...v, stock })))
   }
 
-  const handleSetAllSellPriceToBase = () => {
-    const base = parseFloat(itemPrice) || 0
+  const handleSetAllSellPriceToBase = (price?: number) => {
+    const base = price !== undefined ? price : (parseFloat(itemPrice) || 0)
     setItemVariants((prev) => prev.map((v) => ({ ...v, sellPrice: base })))
+  }
+
+  const handleSetAllVariantsCost = (cost: number) => {
+    setItemVariants((prev) => prev.map((v) => ({ ...v, costPrice: cost })))
+  }
+
+  const [isGeneratingAllSkuBarcodes, setIsGeneratingAllSkuBarcodes] = useState(false)
+
+  const handleUpdateVariantBarcode = (comboId: string, barcode: string) => {
+    setItemVariants((prev) =>
+      prev.map((v) => (v.id === comboId ? { ...v, barcode } : v))
+    )
+  }
+
+  const handleGenerateVariantBarcode = async (comboId: string) => {
+    const code = await generateUniqueBarcode("200")
+    setItemVariants((prev) =>
+      prev.map((v) => (v.id === comboId ? { ...v, barcode: code } : v))
+    )
+  }
+
+  const handleGenerateAllVariantBarcodes = async () => {
+    setIsGeneratingAllSkuBarcodes(true)
+    try {
+      const updated = await Promise.all(
+        itemVariants.map(async (v) => {
+          if (!v.barcode) {
+            const code = await generateUniqueBarcode("200")
+            return { ...v, barcode: code }
+          }
+          return v
+        })
+      )
+      setItemVariants(updated)
+    } finally {
+      setIsGeneratingAllSkuBarcodes(false)
+    }
+  }
+
+  // SKU variant combination image upload via cropper
+  const handleUploadSkuVariantImage = (comboId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSkuUploadTargetComboId(comboId)
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setCropperSrc(reader.result)
+        setCropperTarget("sku")
+        setIsCropperOpen(true)
+      }
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ""
   }
 
   // ── Option Group Builder Helpers ──────────────────────────────────────────
@@ -242,11 +297,11 @@ export function SellerPortal({ user }: { user: User }) {
       prev.map((g, i) =>
         i === groupIdx
           ? {
-              ...g,
-              values: g.values.map((v, vi) =>
-                vi === valueIdx ? { ...v, [field]: value } : v
-              ),
-            }
+            ...g,
+            values: g.values.map((v, vi) =>
+              vi === valueIdx ? { ...v, [field]: value } : v
+            ),
+          }
           : g
       )
     )
@@ -297,14 +352,22 @@ export function SellerPortal({ user }: { user: User }) {
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [itemName, setItemName] = useState("")
   const [itemCategory, setItemCategory] = useState("Apparel & Clothing")
-  const [itemPrice, setItemPrice] = useState("29.99")
+  const [itemPrice, setItemPrice] = useState("")
   const [itemDescription, setItemDescription] = useState("")
   const [itemImage, setItemImage] = useState("/images/bistro_delight.jpg")
   const [itemTags, setItemTags] = useState("BESTSELLER, NEW ARRIVAL")
-  const [itemCalories, setItemCalories] = useState("Sizes: S, M, L, XL")
-  const [itemPrepTime, setItemPrepTime] = useState("Same-Day Dispatch")
+  const [itemCalories, setItemCalories] = useState("")
+  const [itemPrepTime, setItemPrepTime] = useState("")
   const [itemAvailable, setItemAvailable] = useState(true)
-  const [itemStock, setItemStock] = useState<string>("50")
+  const [itemStock, setItemStock] = useState<string>("")
+
+  // SKU bulk action input states
+  const [showBasePriceInput, setShowBasePriceInput] = useState(false)
+  const [basePriceInputValue, setBasePriceInputValue] = useState("")
+  const [showBulkStockInput, setShowBulkStockInput] = useState(false)
+  const [bulkStockInputValue, setBulkStockInputValue] = useState("")
+  const [showBulkCostInput, setShowBulkCostInput] = useState(false)
+  const [bulkCostInputValue, setBulkCostInputValue] = useState("")
   const [itemCostPrice, setItemCostPrice] = useState<string>("")
   const [itemBarcode, setItemBarcode] = useState("")
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false)
@@ -383,7 +446,7 @@ export function SellerPortal({ user }: { user: User }) {
 
     if (target === "store") {
       setIsUploadingStoreImg(true)
-    } else if (target === "variant") {
+    } else if (target === "variant" || target === "sku") {
       setIsUploadingVariantImg(true)
     } else {
       setIsUploadingItemImg(true)
@@ -402,6 +465,11 @@ export function SellerPortal({ user }: { user: User }) {
           url
         )
         setVariantUploadTarget(null)
+      } else if (target === "sku" && skuUploadTargetComboId) {
+        setItemVariants((prev) =>
+          prev.map((v) => (v.id === skuUploadTargetComboId ? { ...v, image: url } : v))
+        )
+        setSkuUploadTargetComboId(null)
       } else {
         setItemImage(url)
       }
@@ -574,21 +642,21 @@ export function SellerPortal({ user }: { user: User }) {
         itemToEdit.variants && itemToEdit.variants.length > 0
           ? itemToEdit.variants
           : itemToEdit.options && itemToEdit.options.length > 0
-          ? generateCombinations(itemToEdit.options)
-          : []
+            ? generateCombinations(itemToEdit.options)
+            : []
       )
     } else {
       setEditingItemId(null)
       setItemName("")
       setItemCategory(PRODUCT_CATEGORIES[0])
-      setItemPrice("18.50")
+      setItemPrice("")
       setItemDescription("")
       setItemImage("/images/truffle_pasta.jpg")
-      setItemTags("POPULAR, BESTSELLER")
-      setItemCalories("550 kcal")
-      setItemPrepTime("15 min")
+      setItemTags("")
+      setItemCalories("")
+      setItemPrepTime("")
       setItemAvailable(true)
-      setItemStock("50")
+      setItemStock("")
       setItemCostPrice("")
       setItemBarcode("")
       setBarcodeStatus(null)
@@ -632,11 +700,11 @@ export function SellerPortal({ user }: { user: User }) {
     const validVariants =
       cleanedOptions.length > 0 && itemVariants.length > 0
         ? itemVariants.filter((v) => {
-            return Object.entries(v.options).every(([grpName, valLabel]) => {
-              const grp = cleanedOptions.find((g) => g.name.trim() === grpName)
-              return grp && grp.values.some((val) => val.label.trim() === valLabel)
-            })
+          return Object.entries(v.options).every(([grpName, valLabel]) => {
+            const grp = cleanedOptions.find((g) => g.name.trim() === grpName)
+            return grp && grp.values.some((val) => val.label.trim() === valLabel)
           })
+        })
         : undefined
 
     const parsedStockNum = parseInt(itemStock)
@@ -903,7 +971,7 @@ export function SellerPortal({ user }: { user: User }) {
                 {/* Telegram Username */}
                 <div className="flex items-center gap-2.5 bg-[#f0f9ff] border border-[#bae6fd] rounded-xl px-4 py-3">
                   <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 text-[#2196F3] fill-current">
-                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z" />
                   </svg>
                   <div className="flex-1 min-w-0">
                     <label className="block text-xs font-bold text-[#0d1c2d] mb-0.5">Telegram Username <span className="font-normal text-[#76777d]">(optional)</span></label>
@@ -963,7 +1031,7 @@ export function SellerPortal({ user }: { user: User }) {
               {!isTelegramEditing ? (
                 <div className="flex items-center gap-2">
                   <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-[#2196F3] fill-current">
-                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z" />
                   </svg>
                   {profile.telegramUsername ? (
                     <span className="text-xs text-[#0d1c2d] font-semibold">@{profile.telegramUsername}</span>
@@ -983,7 +1051,7 @@ export function SellerPortal({ user }: { user: User }) {
               ) : (
                 <div className="flex items-center gap-2 bg-[#f0f9ff] border border-[#bae6fd] rounded-xl px-3 py-2 max-w-xs">
                   <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-[#2196F3] fill-current">
-                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z" />
                   </svg>
                   <input
                     type="text"
@@ -1070,11 +1138,10 @@ export function SellerPortal({ user }: { user: User }) {
                 <div
                   key={store.id}
                   onClick={() => setSelectedStoreId(store.id)}
-                  className={`cursor-pointer rounded-xl border transition-all overflow-hidden flex flex-col justify-between bg-white shadow-xs hover:shadow-md group ${
-                    isSelected
+                  className={`cursor-pointer rounded-xl border transition-all overflow-hidden flex flex-col justify-between bg-white shadow-xs hover:shadow-md group ${isSelected
                       ? "border-[#006c49] ring-2 ring-[#6cf8bb]/40"
                       : "border-[#eef4ff] hover:border-[#cbd5e1]"
-                  }`}
+                    }`}
                 >
                   <div>
                     {/* Compact Square Image Frame - Matching Home Page Style */}
@@ -1158,11 +1225,10 @@ export function SellerPortal({ user }: { user: User }) {
               <button
                 type="button"
                 onClick={() => setActiveStoreTab("catalog")}
-                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  activeStoreTab === "catalog"
+                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeStoreTab === "catalog"
                     ? "bg-[#006c49] text-white shadow-xs"
                     : "text-[#45464d] hover:text-[#0d1c2d] hover:bg-white/50"
-                }`}
+                  }`}
               >
                 <span>📋 Catalog Cards</span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20">
@@ -1173,11 +1239,10 @@ export function SellerPortal({ user }: { user: User }) {
               <button
                 type="button"
                 onClick={() => setActiveStoreTab("inventory")}
-                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  activeStoreTab === "inventory"
+                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeStoreTab === "inventory"
                     ? "bg-[#006c49] text-white shadow-xs"
                     : "text-[#45464d] hover:text-[#0d1c2d] hover:bg-white/50"
-                }`}
+                  }`}
               >
                 <span>📦 Stock & Inventory Hub</span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20">
@@ -1239,19 +1304,18 @@ export function SellerPortal({ user }: { user: User }) {
                             </div>
                             <button
                               onClick={() => handleToggleAvailable(item)}
-                              className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[9px] font-bold transition-all shadow-xs ${
-                                status === "in_stock"
+                              className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[9px] font-bold transition-all shadow-xs ${status === "in_stock"
                                   ? "bg-emerald-600 text-white"
                                   : status === "low_stock"
-                                  ? "bg-amber-500 text-white"
-                                  : "bg-red-600 text-white"
-                              }`}
+                                    ? "bg-amber-500 text-white"
+                                    : "bg-red-600 text-white"
+                                }`}
                             >
                               {status === "in_stock"
                                 ? `${stockCount} In Stock`
                                 : status === "low_stock"
-                                ? `Low: ${stockCount}`
-                                : "Sold Out"}
+                                  ? `Low: ${stockCount}`
+                                  : "Sold Out"}
                             </button>
                           </div>
 
@@ -1386,11 +1450,10 @@ export function SellerPortal({ user }: { user: User }) {
 
                   <div
                     onClick={() => setInventoryStatusFilter("in_stock")}
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                      inventoryStatusFilter === "in_stock"
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${inventoryStatusFilter === "in_stock"
                         ? "bg-emerald-100/60 border-emerald-400 ring-2 ring-emerald-300"
                         : "bg-emerald-50/40 border-emerald-200 hover:bg-emerald-50"
-                    }`}
+                      }`}
                   >
                     <p className="text-[11px] text-emerald-800 font-semibold flex items-center gap-1">
                       <span>✓</span>
@@ -1404,11 +1467,10 @@ export function SellerPortal({ user }: { user: User }) {
 
                   <div
                     onClick={() => setInventoryStatusFilter("low_stock")}
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                      inventoryStatusFilter === "low_stock"
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${inventoryStatusFilter === "low_stock"
                         ? "bg-amber-100 border-amber-400 ring-2 ring-amber-300"
                         : "bg-amber-50/60 border-amber-200 hover:bg-amber-50"
-                    }`}
+                      }`}
                   >
                     <p className="text-[11px] text-amber-800 font-semibold flex items-center gap-1">
                       <span>⚠️</span>
@@ -1422,11 +1484,10 @@ export function SellerPortal({ user }: { user: User }) {
 
                   <div
                     onClick={() => setInventoryStatusFilter("out_of_stock")}
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                      inventoryStatusFilter === "out_of_stock"
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${inventoryStatusFilter === "out_of_stock"
                         ? "bg-red-100 border-red-400 ring-2 ring-red-300"
                         : "bg-red-50/50 border-red-200 hover:bg-red-50"
-                    }`}
+                      }`}
                   >
                     <p className="text-[11px] text-red-800 font-semibold flex items-center gap-1">
                       <span>✕</span>
@@ -1477,19 +1538,18 @@ export function SellerPortal({ user }: { user: User }) {
                           key={st}
                           type="button"
                           onClick={() => setInventoryStatusFilter(st)}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
-                            inventoryStatusFilter === st
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${inventoryStatusFilter === st
                               ? "bg-[#006c49] text-white shadow-2xs"
                               : "text-slate-600 hover:text-slate-900"
-                          }`}
+                            }`}
                         >
                           {st === "all"
                             ? "All"
                             : st === "in_stock"
-                            ? "In Stock"
-                            : st === "low_stock"
-                            ? "Low Stock"
-                            : "Sold Out"}
+                              ? "In Stock"
+                              : st === "low_stock"
+                                ? "Low Stock"
+                                : "Sold Out"}
                         </button>
                       ))}
                     </div>
@@ -1564,11 +1624,10 @@ export function SellerPortal({ user }: { user: User }) {
                                 <tr
                                   key={item.id}
                                   id={`inventory-row-${item.id}`}
-                                  className={`transition-colors group ${
-                                    isHighlighted
+                                  className={`transition-colors group ${isHighlighted
                                       ? "bg-emerald-50 ring-2 ring-emerald-400"
                                       : "hover:bg-[#fbfdff]"
-                                  }`}
+                                    }`}
                                 >
                                   {/* Col 1: Product Thumbnail & Name */}
                                   <td className="py-3.5 px-4 align-middle">
@@ -1640,13 +1699,12 @@ export function SellerPortal({ user }: { user: User }) {
                                   {/* Col 4: Stock Status Badge */}
                                   <td className="py-3.5 px-4 align-middle">
                                     <span
-                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                        status === "in_stock"
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${status === "in_stock"
                                           ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                           : status === "low_stock"
-                                          ? "bg-amber-50 text-amber-700 border border-amber-200 animate-pulse"
-                                          : "bg-red-50 text-red-700 border border-red-200"
-                                      }`}
+                                            ? "bg-amber-50 text-amber-700 border border-amber-200 animate-pulse"
+                                            : "bg-red-50 text-red-700 border border-red-200"
+                                        }`}
                                     >
                                       <span>
                                         {status === "in_stock" ? "✓" : status === "low_stock" ? "⚠️" : "✕"}
@@ -1655,8 +1713,8 @@ export function SellerPortal({ user }: { user: User }) {
                                         {status === "in_stock"
                                           ? "In Stock"
                                           : status === "low_stock"
-                                          ? "Low Stock"
-                                          : "Sold Out"}
+                                            ? "Low Stock"
+                                            : "Sold Out"}
                                       </span>
                                     </span>
                                   </td>
@@ -1723,11 +1781,10 @@ export function SellerPortal({ user }: { user: User }) {
                                           onClick={() =>
                                             handleInlineStockChange(item, stockCount > 0 ? 0 : 25)
                                           }
-                                          className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${
-                                            stockCount > 0
+                                          className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${stockCount > 0
                                               ? "text-red-600 bg-red-50 hover:bg-red-100 border-red-200"
                                               : "text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200"
-                                          }`}
+                                            }`}
                                         >
                                           {stockCount > 0 ? "Set 0" : "Stock 25"}
                                         </button>
@@ -1768,11 +1825,10 @@ export function SellerPortal({ user }: { user: User }) {
                           <div
                             key={item.id}
                             id={`inventory-card-${item.id}`}
-                            className={`p-3.5 rounded-2xl border bg-white shadow-2xs transition-all ${
-                              isHighlighted
+                            className={`p-3.5 rounded-2xl border bg-white shadow-2xs transition-all ${isHighlighted
                                 ? "border-emerald-400 bg-emerald-50/40 ring-2 ring-emerald-300"
                                 : "border-[#eef4ff] hover:border-[#cbd5e1]"
-                            }`}
+                              }`}
                           >
                             {/* Card Header: Image + Title + Price + Status */}
                             <div className="flex items-start gap-3">
@@ -1806,19 +1862,18 @@ export function SellerPortal({ user }: { user: User }) {
                                     </span>
                                   )}
                                   <span
-                                    className={`inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[9px] font-bold ${
-                                      status === "in_stock"
+                                    className={`inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[9px] font-bold ${status === "in_stock"
                                         ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                         : status === "low_stock"
-                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                        : "bg-red-50 text-red-700 border border-red-200"
-                                    }`}
+                                          ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                          : "bg-red-50 text-red-700 border border-red-200"
+                                      }`}
                                   >
                                     {status === "in_stock"
                                       ? "✓ In Stock"
                                       : status === "low_stock"
-                                      ? `⚠️ Low (${stockCount})`
-                                      : "✕ Sold Out"}
+                                        ? `⚠️ Low (${stockCount})`
+                                        : "✕ Sold Out"}
                                   </span>
                                 </div>
                               </div>
@@ -1870,11 +1925,10 @@ export function SellerPortal({ user }: { user: User }) {
                                       onClick={() =>
                                         handleInlineStockChange(item, stockCount > 0 ? 0 : 25)
                                       }
-                                      className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border ${
-                                        stockCount > 0
+                                      className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border ${stockCount > 0
                                           ? "text-red-600 bg-red-50 border-red-200"
                                           : "text-emerald-700 bg-emerald-50 border-emerald-200"
-                                      }`}
+                                        }`}
                                     >
                                       {stockCount > 0 ? "Set 0" : "Stock 25"}
                                     </button>
@@ -1926,8 +1980,8 @@ export function SellerPortal({ user }: { user: User }) {
                                       v.stock <= 0
                                         ? "out_of_stock"
                                         : v.stock <= 5
-                                        ? "low_stock"
-                                        : "in_stock"
+                                          ? "low_stock"
+                                          : "in_stock"
 
                                     return (
                                       <div
@@ -1943,13 +1997,12 @@ export function SellerPortal({ user }: { user: User }) {
                                               ${(v.sellPrice || item.price).toFixed(2)}
                                             </span>
                                             <span
-                                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
-                                                skuStatus === "in_stock"
+                                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${skuStatus === "in_stock"
                                                   ? "bg-emerald-100 text-emerald-800"
                                                   : skuStatus === "low_stock"
-                                                  ? "bg-amber-100 text-amber-800"
-                                                  : "bg-red-100 text-red-800"
-                                              }`}
+                                                    ? "bg-amber-100 text-amber-800"
+                                                    : "bg-red-100 text-red-800"
+                                                }`}
                                             >
                                               {v.stock} in stock
                                             </span>
@@ -2048,8 +2101,8 @@ export function SellerPortal({ user }: { user: User }) {
                                   v.stock <= 0
                                     ? "out_of_stock"
                                     : v.stock <= 5
-                                    ? "low_stock"
-                                    : "in_stock"
+                                      ? "low_stock"
+                                      : "in_stock"
 
                                 return (
                                   <div
@@ -2065,13 +2118,12 @@ export function SellerPortal({ user }: { user: User }) {
                                           ${(v.sellPrice || item.price).toFixed(2)}
                                         </span>
                                         <span
-                                          className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
-                                            skuStatus === "in_stock"
+                                          className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${skuStatus === "in_stock"
                                               ? "bg-emerald-50 text-emerald-700"
                                               : skuStatus === "low_stock"
-                                              ? "bg-amber-50 text-amber-700"
-                                              : "bg-red-50 text-red-700"
-                                          }`}
+                                                ? "bg-amber-50 text-amber-700"
+                                                : "bg-red-50 text-red-700"
+                                            }`}
                                         >
                                           {v.stock} in stock
                                         </span>
@@ -2217,11 +2269,10 @@ export function SellerPortal({ user }: { user: User }) {
                       key={emoji}
                       type="button"
                       onClick={() => setStoreBadge(emoji)}
-                      className={`w-9 h-9 rounded-xl text-base flex items-center justify-center border transition-all ${
-                        storeBadge === emoji
+                      className={`w-9 h-9 rounded-xl text-base flex items-center justify-center border transition-all ${storeBadge === emoji
                           ? "border-[#006c49] bg-emerald-50 scale-110"
                           : "border-[#eef4ff] hover:bg-slate-50"
-                      }`}
+                        }`}
                     >
                       {emoji}
                     </button>
@@ -2288,9 +2339,8 @@ export function SellerPortal({ user }: { user: User }) {
                       key={img.url}
                       type="button"
                       onClick={() => setStoreImage(img.url)}
-                      className={`relative h-12 rounded-lg overflow-hidden border-2 transition-all ${
-                        storeImage === img.url ? "border-[#006c49]" : "border-transparent"
-                      }`}
+                      className={`relative h-12 rounded-lg overflow-hidden border-2 transition-all ${storeImage === img.url ? "border-[#006c49]" : "border-transparent"
+                        }`}
                     >
                       <Image src={img.url} alt={img.name} fill sizes="80px" className="object-cover" />
                     </button>
@@ -2380,7 +2430,7 @@ export function SellerPortal({ user }: { user: User }) {
                     required
                     value={itemPrice}
                     onChange={(e) => setItemPrice(e.target.value)}
-                    placeholder="24.50"
+                    placeholder="0.00"
                     className="w-full h-10 px-3.5 bg-white border border-[#c6c6cd] rounded-xl text-[#0d1c2d] outline-none focus:border-[#006c49]"
                   />
                 </div>
@@ -2445,10 +2495,9 @@ export function SellerPortal({ user }: { user: User }) {
                     disabled={itemVariants.length > 0}
                     value={itemVariants.length > 0 ? itemVariants.reduce((s, v) => s + (v.stock || 0), 0) : itemStock}
                     onChange={(e) => setItemStock(e.target.value)}
-                    placeholder="50"
-                    className={`w-full h-10 px-3.5 bg-white border border-[#c6c6cd] rounded-xl text-[#0d1c2d] outline-none ${
-                      itemVariants.length > 0 ? "opacity-60 bg-slate-100 cursor-not-allowed" : ""
-                    }`}
+                    placeholder="0"
+                    className={`w-full h-10 px-3.5 bg-white border border-[#c6c6cd] rounded-xl text-[#0d1c2d] outline-none ${itemVariants.length > 0 ? "opacity-60 bg-slate-100 cursor-not-allowed" : ""
+                      }`}
                   />
                   {itemVariants.length > 0 && (
                     <p className="text-[9px] text-[#00714d] mt-0.5">
@@ -2515,13 +2564,12 @@ export function SellerPortal({ user }: { user: User }) {
                     value={itemBarcode}
                     onChange={(e) => setItemBarcode(e.target.value)}
                     placeholder="e.g. 200849201934 or TSHIRT-RED-S"
-                    className={`w-full h-10 px-3.5 pr-20 rounded-xl text-xs font-mono outline-none transition-all border ${
-                      barcodeStatus && !barcodeStatus.isChecking && !barcodeStatus.isUnique
+                    className={`w-full h-10 px-3.5 pr-20 rounded-xl text-xs font-mono outline-none transition-all border ${barcodeStatus && !barcodeStatus.isChecking && !barcodeStatus.isUnique
                         ? "border-red-500 bg-red-50/40 text-red-900 focus:border-red-600 ring-2 ring-red-200"
                         : barcodeStatus && !barcodeStatus.isChecking && barcodeStatus.isUnique
-                        ? "border-emerald-500 bg-emerald-50/20 text-[#0d1c2d] focus:border-[#006c49]"
-                        : "border-[#c6c6cd] bg-white text-[#0d1c2d] focus:border-[#006c49]"
-                    }`}
+                          ? "border-emerald-500 bg-emerald-50/20 text-[#0d1c2d] focus:border-[#006c49]"
+                          : "border-[#c6c6cd] bg-white text-[#0d1c2d] focus:border-[#006c49]"
+                      }`}
                   />
                   {itemBarcode && (
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -2601,26 +2649,39 @@ export function SellerPortal({ user }: { user: User }) {
                   Product / Item Image
                 </label>
 
-                {/* Upload to Supabase Storage Box */}
+                {/* Upload to Supabase Storage Box with Browse & Camera */}
                 <div className="border-2 border-dashed border-[#ccdbf2] hover:border-[#006c49] bg-[#f8f9ff] rounded-2xl p-4 text-center transition-all mb-3">
                   <div className="flex flex-col items-center justify-center gap-1.5">
-                    <span className="text-2xl">📤</span>
+                    <span className="text-2xl">📸</span>
                     <p className="text-xs font-bold text-[#0d1c2d]">
                       {isUploadingItemImg
                         ? "Uploading product photo to Supabase..."
-                        : "Upload Product Image from Device"}
+                        : "Upload Product Image or Capture with Camera"}
                     </p>
                     <p className="text-[11px] text-[#76777d]">PNG, JPG, WEBP up to 5MB</p>
-                    <label className="mt-1 cursor-pointer bg-[#006c49] hover:bg-[#005236] text-white text-xs font-semibold px-4 py-1.5 rounded-xl shadow-xs inline-block">
-                      <span>Browse Files</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        disabled={isUploadingItemImg}
-                        onChange={handleUploadProductImage}
-                        className="hidden"
-                      />
-                    </label>
+                    <div className="flex items-center justify-center gap-2 mt-1.5 flex-wrap">
+                      <label className="cursor-pointer bg-[#006c49] hover:bg-[#005236] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-all">
+                        <span>📁 Browse Files</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={isUploadingItemImg}
+                          onChange={handleUploadProductImage}
+                          className="hidden"
+                        />
+                      </label>
+                      <label className="cursor-pointer bg-white hover:bg-emerald-50 text-[#006c49] border border-[#006c49] text-xs font-semibold px-4 py-2 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-all">
+                        <span>📷 Use Camera</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          disabled={isUploadingItemImg}
+                          onChange={handleUploadProductImage}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
                   </div>
                 </div>
 
@@ -2630,30 +2691,26 @@ export function SellerPortal({ user }: { user: User }) {
                   </div>
                 )}
 
-                {/* Live Preview */}
-                <div className="flex items-center gap-3 mb-2 p-2 bg-slate-50 rounded-xl border border-[#eef4ff]">
-                  <div className="relative w-16 h-12 rounded-lg overflow-hidden bg-slate-200 shrink-0">
-                    <Image
-                      src={itemImage}
-                      alt="Product Preview"
-                      fill
-                      sizes="64px"
-                      className="object-cover"
-                    />
+                {/* Live Preview (Raw storage URL text box is hidden) */}
+                {itemImage && (
+                  <div className="flex items-center gap-3 mb-2 p-2.5 bg-slate-50 rounded-xl border border-[#eef4ff]">
+                    <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-[#ccdbf2]">
+                      <Image
+                        src={itemImage}
+                        alt="Product Preview"
+                        fill
+                        sizes="56px"
+                        className="object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-[#0d1c2d]">Active Product Photo</p>
+                      <p className="text-[11px] text-[#00714d] font-semibold flex items-center gap-1 mt-0.5">
+                        <span>✓</span> Photo ready
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-bold text-[#0d1c2d]">Active Product Photo</p>
-                    <p className="text-[10px] text-[#76777d] truncate">{itemImage}</p>
-                  </div>
-                </div>
-
-                <input
-                  type="text"
-                  value={itemImage}
-                  onChange={(e) => setItemImage(e.target.value)}
-                  placeholder="Or enter custom image URL"
-                  className="w-full h-8 px-3 bg-white border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs"
-                />
+                )}
               </div>
 
               {/* ── Option Groups / Variants Builder ───────────────────────── */}
@@ -2799,11 +2856,10 @@ export function SellerPortal({ user }: { user: User }) {
 
                                 {/* Stock Qty */}
                                 <div
-                                  className={`flex items-center gap-1 px-2 py-1 rounded-lg border ${
-                                    val.stock !== undefined && val.stock <= 0
+                                  className={`flex items-center gap-1 px-2 py-1 rounded-lg border ${val.stock !== undefined && val.stock <= 0
                                       ? "border-red-300 text-red-600 bg-red-50"
                                       : "border-[#c6c6cd] bg-white text-[#0d1c2d]"
-                                  }`}
+                                    }`}
                                   title="Stock quantity (0 = Sold Out, blank = Unlimited)"
                                 >
                                   <span className="text-[11px] text-[#76777d] font-semibold">Qty:</span>
@@ -2855,51 +2911,132 @@ export function SellerPortal({ user }: { user: User }) {
                 {/* ── Multi-Attribute Variant Matrix (SKU Combinations) ── */}
                 {itemOptions.some((g) => g.name.trim() && g.values.some((v) => v.label.trim())) && (
                   <div className="mt-5 pt-5 border-t border-[#eef4ff]">
+                    {/* Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                       <div>
                         <p className="text-sm font-bold text-[#0d1c2d] flex items-center gap-1.5">
                           <span>📊 SKU Combination Matrix & Stock</span>
                         </p>
                         <p className="text-xs text-[#76777d]">
-                          Set cost, selling price, and inventory for each specific variant combination
+                          Configure selling price, cost, inventory, and unique barcodes per variant combination
                         </p>
                       </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleSyncCombinations}
+                        className="text-xs font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+                        title="Generate or sync all combinations"
+                      >
+                        <span>⚡ Sync SKUs</span>
+                      </button>
+                    </div>
+
+                    {/* Bulk Action Controls Bar */}
+                    <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 mb-3 flex flex-wrap items-center gap-2.5">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                        ⚡ Quick Apply All:
+                      </span>
+
+                      {/* Bulk Price */}
+                      <div className="flex items-center bg-white border border-[#ccdbf2] rounded-xl overflow-hidden shadow-2xs">
+                        <span className="text-xs font-bold text-[#006c49] pl-2.5 pr-1">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={basePriceInputValue}
+                          onChange={(e) => setBasePriceInputValue(e.target.value)}
+                          placeholder={itemPrice || "0.00"}
+                          className="w-16 h-8 text-xs outline-none text-right font-medium text-[#0d1c2d]"
+                        />
                         <button
                           type="button"
-                          onClick={handleSyncCombinations}
-                          className="text-xs font-bold text-[#006c49] bg-white border border-[#ccdbf2] hover:border-[#006c49] px-2.5 py-1 rounded-lg transition-all shadow-xs"
-                          title="Generate or sync all combinations"
+                          onClick={() => {
+                            const val = parseFloat(basePriceInputValue)
+                            handleSetAllSellPriceToBase(!isNaN(val) ? val : undefined)
+                          }}
+                          className="text-xs font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 px-2.5 h-8 border-l border-[#ccdbf2] transition-all"
+                          title="Apply selling price to all SKUs"
                         >
-                          ⚡ Sync SKUs
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSetAllSellPriceToBase}
-                          className="text-xs font-semibold text-[#0d1c2d] bg-white border border-[#ccdbf2] hover:bg-slate-50 px-2.5 py-1 rounded-lg transition-all"
-                          title="Apply base item price to all SKU Sell Prices"
-                        >
-                          Set Base Price (${itemPrice})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSetAllVariantsStock(10)}
-                          className="text-xs font-semibold text-[#0d1c2d] bg-white border border-[#ccdbf2] hover:bg-slate-50 px-2 py-1 rounded-lg transition-all"
-                        >
-                          Stock: 10
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSetAllVariantsStock(0)}
-                          className="text-xs font-semibold text-red-600 bg-white border border-red-200 hover:bg-red-50 px-2 py-1 rounded-lg transition-all"
-                        >
-                          Stock: 0
+                          Set Price
                         </button>
                       </div>
+
+                      {/* Bulk Cost */}
+                      <div className="flex items-center bg-white border border-[#ccdbf2] rounded-xl overflow-hidden shadow-2xs">
+                        <span className="text-xs font-bold text-slate-500 pl-2.5 pr-1">Cost $</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={bulkCostInputValue}
+                          onChange={(e) => setBulkCostInputValue(e.target.value)}
+                          placeholder={itemCostPrice || "0.00"}
+                          className="w-16 h-8 text-xs outline-none text-right font-medium text-[#0d1c2d]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cost = parseFloat(bulkCostInputValue)
+                            handleSetAllVariantsCost(!isNaN(cost) ? Math.max(0, cost) : (parseFloat(itemCostPrice) || 0))
+                          }}
+                          className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 h-8 border-l border-[#ccdbf2] transition-all"
+                          title="Apply unit cost to all SKUs"
+                        >
+                          Set Cost
+                        </button>
+                      </div>
+
+                      {/* Bulk Stock */}
+                      <div className="flex items-center bg-white border border-[#ccdbf2] rounded-xl overflow-hidden shadow-2xs">
+                        <span className="text-xs font-semibold text-slate-500 pl-2.5 pr-1">Qty</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={bulkStockInputValue}
+                          onChange={(e) => setBulkStockInputValue(e.target.value)}
+                          placeholder="0"
+                          className="w-12 h-8 text-xs outline-none text-center font-bold text-[#0d1c2d]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const qty = parseInt(bulkStockInputValue, 10)
+                            handleSetAllVariantsStock(!isNaN(qty) ? Math.max(0, qty) : 10)
+                          }}
+                          className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 h-8 border-l border-[#ccdbf2] transition-all"
+                          title="Apply stock quantity to all SKUs"
+                        >
+                          Set Stock
+                        </button>
+                      </div>
+
+                      {/* Stock: 0 */}
+                      <button
+                        type="button"
+                        onClick={() => handleSetAllVariantsStock(0)}
+                        className="text-xs font-semibold text-red-600 bg-white border border-red-200 hover:bg-red-50 px-3 h-8 rounded-xl transition-all shadow-2xs"
+                        title="Set stock of all SKUs to 0"
+                      >
+                        Stock: 0
+                      </button>
+
+                      {/* Bulk Barcode */}
+                      <button
+                        type="button"
+                        onClick={handleGenerateAllVariantBarcodes}
+                        disabled={isGeneratingAllSkuBarcodes || itemVariants.length === 0}
+                        className="text-xs font-bold text-[#006c49] bg-white border border-emerald-300 hover:bg-emerald-50 disabled:opacity-50 px-3 h-8 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 ml-auto"
+                        title="Generate unique barcode for all SKU items"
+                      >
+                        <span>🏷️</span>
+                        <span>{isGeneratingAllSkuBarcodes ? "Generating..." : "Gen All Barcodes"}</span>
+                      </button>
                     </div>
 
                     {itemVariants.length === 0 ? (
-                      <div className="text-center py-4 bg-white rounded-xl border border-dashed border-[#ccdbf2]">
+                      <div className="text-center py-6 bg-white rounded-2xl border border-dashed border-[#ccdbf2]">
                         <button
                           type="button"
                           onClick={handleSyncCombinations}
@@ -2909,54 +3046,54 @@ export function SellerPortal({ user }: { user: User }) {
                         </button>
                       </div>
                     ) : (
-                      <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                      <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                         {itemVariants.map((variant) => {
                           const isOutOfStock = variant.stock <= 0
                           const margin =
                             variant.sellPrice !== undefined &&
-                            variant.costPrice !== undefined &&
-                            variant.costPrice > 0
+                              variant.costPrice !== undefined &&
+                              variant.costPrice > 0
                               ? variant.sellPrice - variant.costPrice
                               : null
 
                           return (
                             <div
                               key={variant.id}
-                              className={`flex flex-col md:flex-row md:items-center justify-between p-3.5 rounded-xl border transition-all gap-3 ${
-                                isOutOfStock
-                                  ? "bg-red-50/30 border-red-200"
-                                  : "bg-white border-[#eef4ff] hover:border-[#ccdbf2] shadow-2xs"
-                              }`}
+                              className={`p-3.5 rounded-2xl border transition-all ${isOutOfStock
+                                  ? "bg-red-50/20 border-red-200 hover:border-red-300"
+                                  : "bg-white border-slate-200/80 hover:border-[#006c49]/40 shadow-xs"
+                                }`}
                             >
-                              {/* Left: Combination Badges & Status */}
-                              <div className="min-w-0 flex-1">
+                              {/* Tier 1: Badges & Status Header */}
+                              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100 p-2 mb-2">
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   {Object.entries(variant.options).map(([k, v]) => (
                                     <span
                                       key={k}
-                                      className="whitespace-nowrap inline-flex items-center text-xs font-bold bg-[#eef4ff] text-[#00714d] px-2.5 py-1 rounded-lg border border-[#ccdbf2]"
+                                      className="whitespace-nowrap inline-flex items-center text-xs font-bold bg-[#f0fdf4] text-[#00714d] px-2.5 py-1 rounded-lg border border-emerald-200 shadow-2xs"
                                     >
                                       {k}: {v}
                                     </span>
                                   ))}
+                                </div>
 
+                                <div className="flex items-center gap-1.5 ml-auto">
                                   {isOutOfStock ? (
-                                    <span className="whitespace-nowrap inline-flex items-center text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
+                                    <span className="whitespace-nowrap inline-flex items-center text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
                                       No Stock
                                     </span>
                                   ) : (
-                                    <span className="whitespace-nowrap inline-flex items-center text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                                    <span className="whitespace-nowrap inline-flex items-center text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                                       In Stock
                                     </span>
                                   )}
 
                                   {margin !== null && (
                                     <span
-                                      className={`whitespace-nowrap inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                        margin >= 0
-                                          ? "text-emerald-700 bg-emerald-50 border border-emerald-200"
-                                          : "text-red-700 bg-red-50 border border-red-200"
-                                      }`}
+                                      className={`whitespace-nowrap inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border ${margin >= 0
+                                          ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                                          : "text-red-700 bg-red-50 border-red-200"
+                                        }`}
                                     >
                                       Margin: ${margin.toFixed(2)}
                                     </span>
@@ -2964,79 +3101,139 @@ export function SellerPortal({ user }: { user: User }) {
                                 </div>
                               </div>
 
-                              {/* Right: Cost, Sell, and Stock Fields */}
-                              <div className="flex items-center gap-2.5 flex-wrap shrink-0">
-                                {/* Cost Price */}
+                              {/* Tier 2: Photo + 4-Column Controls Grid */}
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                {/* SKU Photo Box */}
                                 <div
-                                  className="flex items-center gap-1 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-[#e2e8f0]"
-                                  title="Cost / Wholesale price (Seller unit cost)"
+                                  className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200 group/img cursor-pointer shadow-2xs"
+                                  title="Upload photo for this SKU combination"
                                 >
-                                  <span className="text-xs text-[#76777d] font-semibold whitespace-nowrap">Cost: $</span>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    value={variant.costPrice !== undefined ? variant.costPrice : ""}
-                                    onChange={(e) =>
-                                      handleUpdateVariantCostPrice(
-                                        variant.id,
-                                        e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
-                                      )
-                                    }
-                                    placeholder="0.00"
-                                    className="w-18 h-6 bg-white border border-[#c6c6cd] rounded-lg text-xs outline-none focus:border-[#006c49] text-right font-medium px-1.5"
-                                  />
+                                  {variant.image ? (
+                                    <Image
+                                      src={variant.image}
+                                      alt="SKU Photo"
+                                      fill
+                                      sizes="48px"
+                                      className="object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
+                                      <span className="text-base leading-none">📷</span>
+                                      <span className="text-[9px] font-bold mt-0.5">Photo</span>
+                                    </div>
+                                  )}
+                                  <label className="absolute inset-0 cursor-pointer opacity-0 group-hover/img:opacity-100 bg-black/60 flex items-center justify-center text-white text-[10px] font-bold transition-opacity">
+                                    {isUploadingVariantImg && skuUploadTargetComboId === variant.id ? "..." : "📸"}
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => handleUploadSkuVariantImage(variant.id, e)}
+                                    />
+                                  </label>
                                 </div>
 
-                                {/* Sell Price */}
-                                <div
-                                  className="flex items-center gap-1 bg-emerald-50/60 px-2.5 py-1.5 rounded-xl border border-emerald-200"
-                                  title="Selling / Retail price for this SKU"
-                                >
-                                  <span className="text-xs text-[#006c49] font-bold whitespace-nowrap">Sell: $</span>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    value={variant.sellPrice !== undefined ? variant.sellPrice : ""}
-                                    onChange={(e) =>
-                                      handleUpdateVariantSellPrice(
-                                        variant.id,
-                                        e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
-                                      )
-                                    }
-                                    placeholder={itemPrice}
-                                    className="w-18 h-6 bg-white border border-[#006c49] text-[#006c49] rounded-lg text-xs font-bold outline-none text-right px-1.5"
-                                  />
-                                </div>
+                                {/* Form Grid: Cost, Sell, Stock, Barcode */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 flex-1">
+                                  {/* 1. Cost Price */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                      Cost Price ($)
+                                    </label>
+                                    <div className="flex items-center h-8 bg-slate-50 border border-slate-200 rounded-lg px-2 focus-within:border-slate-400 focus-within:bg-white transition-all">
+                                      <span className="text-xs text-slate-400 font-semibold">$</span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={variant.costPrice !== undefined ? variant.costPrice : ""}
+                                        onChange={(e) =>
+                                          handleUpdateVariantCostPrice(
+                                            variant.id,
+                                            e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
+                                          )
+                                        }
+                                        placeholder="0.00"
+                                        className="w-full h-full bg-transparent text-right text-xs font-medium outline-none text-[#0d1c2d]"
+                                      />
+                                    </div>
+                                  </div>
 
-                                {/* Stock Quantity */}
-                                <div
-                                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border ${
-                                    isOutOfStock
-                                      ? "bg-red-50 border-red-200"
-                                      : "bg-slate-50 border-[#e2e8f0]"
-                                  }`}
-                                  title="Stock quantity for this SKU (0 = No Stock)"
-                                >
-                                  <span className="text-xs text-[#76777d] font-semibold whitespace-nowrap">Stock:</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    value={variant.stock}
-                                    onChange={(e) =>
-                                      handleUpdateVariantStock(
-                                        variant.id,
-                                        Math.max(0, parseInt(e.target.value, 10) || 0)
-                                      )
-                                    }
-                                    className={`w-14 h-6 bg-white border rounded-lg text-xs font-bold text-center outline-none focus:border-[#006c49] px-1 ${
-                                      isOutOfStock
-                                        ? "border-red-300 text-red-600"
-                                        : "border-[#c6c6cd] text-[#0d1c2d]"
-                                    }`}
-                                  />
+                                  {/* 2. Sell Price */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-[#006c49] mb-1">
+                                      Selling Price ($) *
+                                    </label>
+                                    <div className="flex items-center h-8 bg-emerald-50/50 border border-emerald-200 rounded-lg px-2 focus-within:border-[#006c49] focus-within:bg-white transition-all">
+                                      <span className="text-xs text-[#006c49] font-bold">$</span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={variant.sellPrice !== undefined ? variant.sellPrice : ""}
+                                        onChange={(e) =>
+                                          handleUpdateVariantSellPrice(
+                                            variant.id,
+                                            e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
+                                          )
+                                        }
+                                        placeholder={itemPrice || "0.00"}
+                                        className="w-full h-full bg-transparent text-right text-xs font-bold text-[#006c49] outline-none"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* 3. Stock Quantity */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                      Stock (Units)
+                                    </label>
+                                    <div
+                                      className={`flex items-center h-8 border rounded-lg px-2 transition-all ${isOutOfStock
+                                          ? "bg-red-50/80 border-red-200 focus-within:border-red-400"
+                                          : "bg-slate-50 border-slate-200 focus-within:border-slate-400 focus-within:bg-white"
+                                        }`}
+                                    >
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        value={variant.stock}
+                                        onChange={(e) =>
+                                          handleUpdateVariantStock(
+                                            variant.id,
+                                            Math.max(0, parseInt(e.target.value, 10) || 0)
+                                          )
+                                        }
+                                        className={`w-full h-full bg-transparent text-center text-xs font-bold outline-none ${isOutOfStock ? "text-red-600" : "text-[#0d1c2d]"
+                                          }`}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* 4. SKU Barcode */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                      SKU Barcode
+                                    </label>
+                                    <div className="flex items-center h-8 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:border-[#006c49] transition-all">
+                                      <input
+                                        type="text"
+                                        value={variant.barcode || ""}
+                                        onChange={(e) => handleUpdateVariantBarcode(variant.id, e.target.value)}
+                                        placeholder="EAN-13 code"
+                                        className="w-full h-full px-2 text-xs font-mono text-[#0d1c2d] outline-none"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleGenerateVariantBarcode(variant.id)}
+                                        className="h-full px-2 text-[10px] font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border-l border-slate-200 transition-all whitespace-nowrap"
+                                        title="Auto-generate unique barcode"
+                                      >
+                                        ⚡ Gen
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -3090,8 +3287,10 @@ export function SellerPortal({ user }: { user: User }) {
           cropperTarget === "store"
             ? "Crop Store Cover (1:1 Square)"
             : cropperTarget === "variant"
-            ? "Crop Variant Image (1:1 Square)"
-            : "Crop Product Photo (1:1 Square)"
+              ? "Crop Option Image (1:1 Square)"
+              : cropperTarget === "sku"
+                ? "Crop SKU Combination Photo (1:1 Square)"
+                : "Crop Product Photo (1:1 Square)"
         }
         onClose={() => {
           setIsCropperOpen(false)
