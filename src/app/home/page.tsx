@@ -7,6 +7,7 @@ import { type User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 import { getStores, getMenuItems, getSellerProfileByStoreId } from "@/lib/store-data"
 import { Store, StoreMenuItem, OptionValue } from "@/lib/seller-types"
+import { resolveDisplayImage } from "@/lib/selection-image"
 
 interface SelectedOption {
   groupId: string
@@ -636,10 +637,22 @@ export default function MenuHubScreen() {
     }
 
     setDetailSelectedOptions(newSelections)
-    // If this value has an image, swap the display image
-    if (value.image) {
-      setDetailDisplayImage(value.image)
-    }
+    updateDetailImageForSelection(newSelections)
+  }
+
+  const updateDetailImageForSelection = (selections: SelectedOption[]) => {
+    if (!detailItem?.options) return
+    const image = resolveDisplayImage(
+      selections.map((selection) => ({
+        groupId: selection.groupId,
+        groupName: selection.groupName,
+        valueId: selection.value.id,
+        value: selection.value.label,
+      })),
+      detailItem.options,
+      detailItem.variants || []
+    )
+    if (image) setDetailDisplayImage(image)
   }
 
   const handleAddFromDetail = () => {
@@ -2013,6 +2026,7 @@ export default function MenuHubScreen() {
                                   type="button"
                                   disabled={isOutOfStock || qty >= maxQty}
                                   onClick={() => {
+                                    updateDetailImageForSelection(candidateSelections)
                                     setDetailComboQuantities((prev) => {
                                       const current = prev[comboKey]?.quantity || 0
                                       const nextQty = Math.min(maxQty, current + 1)
