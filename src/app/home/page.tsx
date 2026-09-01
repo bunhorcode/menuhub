@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { type User } from "@supabase/supabase-js"
@@ -124,6 +124,11 @@ export default function MenuHubScreen() {
   const [detailDisplayImage, setDetailDisplayImage] = useState<string>("")
   // Per-combination quantities across all variants (e.g. White+S: 1, White+M: 1, Black+S: 1, Black+M: 1)
   const [detailComboQuantities, setDetailComboQuantities] = useState<Record<string, ModalOptionQuantityEntry>>({})
+
+  // Simple Gallery Modal states
+  const [simpleGalleryItem, setSimpleGalleryItem] = useState<StoreMenuItem | null>(null)
+  const [activeGalleryIndex, setActiveGalleryIndex] = useState<number>(0)
+  const [isGalleryZoomed, setIsGalleryZoomed] = useState<boolean>(false)
 
   // Seller Telegram username for the active store (used for order notification button)
   const [sellerTelegramUsername, setSellerTelegramUsername] = useState<string | null>(null)
@@ -653,9 +658,18 @@ export default function MenuHubScreen() {
     setDetailItem(null)
   }
 
-  // When clicking a product card, decide: open detail modal or add directly
+  // When clicking a product card, decide: open Simple Gallery modal, open detail modal, or add directly
   const handleProductClick = (item: StoreMenuItem) => {
-    if (item.options && item.options.length > 0) {
+    if (item.productType === "simple") {
+      setSimpleGalleryItem(item)
+      setActiveGalleryIndex(0)
+      setIsGalleryZoomed(false)
+      if (!activeRestaurant && item.storeId) {
+        getSellerProfileByStoreId(item.storeId).then((prof) => {
+          setSellerTelegramUsername(prof?.telegramUsername || null)
+        })
+      }
+    } else if (item.options && item.options.length > 0) {
       handleOpenItemDetail(item)
     } else {
       handleAddToCart(item)
@@ -690,6 +704,48 @@ export default function MenuHubScreen() {
 
   const isAllSelected = cart.length > 0 && selectedCartItems.length === cart.length
   const isSomeSelected = selectedCartItems.length > 0 && !isAllSelected
+
+  // Keyboard navigation for Simple Gallery Modal
+  const galleryTouchStartX = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!simpleGalleryItem) return
+    const images =
+      simpleGalleryItem.gallery && simpleGalleryItem.gallery.length > 0
+        ? simpleGalleryItem.gallery.map((g) => g.url)
+        : [simpleGalleryItem.image]
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSimpleGalleryItem(null)
+      } else if (e.key === "ArrowLeft") {
+        setActiveGalleryIndex((prev) => (prev > 0 ? prev - 1 : images.length - 1))
+      } else if (e.key === "ArrowRight") {
+        setActiveGalleryIndex((prev) => (prev < images.length - 1 ? prev + 1 : 0))
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [simpleGalleryItem])
+
+  const handleGalleryTouchStart = (e: React.TouchEvent) => {
+    galleryTouchStartX.current = e.touches[0].clientX
+  }
+
+  const handleGalleryTouchEnd = (e: React.TouchEvent, totalImages: number) => {
+    if (galleryTouchStartX.current === null) return
+    const diff = galleryTouchStartX.current - e.changedTouches[0].clientX
+    if (Math.abs(diff) > 40) {
+      if (diff > 0) {
+        // Swipe left -> next photo
+        setActiveGalleryIndex((prev) => (prev < totalImages - 1 ? prev + 1 : 0))
+      } else {
+        // Swipe right -> previous photo
+        setActiveGalleryIndex((prev) => (prev > 0 ? prev - 1 : totalImages - 1))
+      }
+    }
+    galleryTouchStartX.current = null
+  }
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] text-[#0d1c2d] flex flex-col font-sans">
@@ -776,7 +832,7 @@ export default function MenuHubScreen() {
                 </span>
                 <input
                   type="text"
-                  placeholder="Search products, stores, fashion, groceries, gadgets, beauty..."
+                  placeholder="Search products, stores, fashion, groceries, cars, gadgets, beauty..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full h-11 sm:h-12 pl-10 pr-10 bg-[#f8f9ff] border border-[#eef4ff] rounded-xl text-xs sm:text-sm text-[#0d1c2d] placeholder-[#76777d] focus:outline-none focus:border-[#006c49] focus:bg-white transition-all"
@@ -807,10 +863,11 @@ export default function MenuHubScreen() {
                   <button
                     key={pill.name}
                     onClick={() => setSelectedCategoryPill(pill.name)}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all ${isActive
-                      ? "bg-[#006c49] text-white shadow-xs"
-                      : "bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#0d1c2d]"
-                      }`}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all ${
+                      isActive
+                        ? "bg-[#006c49] text-white shadow-xs"
+                        : "bg-[#eef4ff] hover:bg-[#dbe9ff] text-[#0d1c2d]"
+                    }`}
                   >
                     <span>{pill.icon}</span>
                     <span>{pill.name}</span>
@@ -870,7 +927,7 @@ export default function MenuHubScreen() {
                   </button>
                 )}
 
-                {/* Filter Icon Button (Sliders Icon with Active Count Badge) */}
+                {/* Filter Toggle Button */}
                 <button
                   type="button"
                   onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
@@ -881,7 +938,6 @@ export default function MenuHubScreen() {
                   }`}
                   title="Toggle Filter & Sort Options"
                 >
-                  {/* Modern Sliders Filter SVG Icon */}
                   <svg
                     className="w-3.5 h-3.5 shrink-0 text-[#006c49]"
                     viewBox="0 0 24 24"
@@ -914,7 +970,7 @@ export default function MenuHubScreen() {
               </div>
             </div>
 
-            {/* Expandable Hidden Filter Drawer / Panel */}
+            {/* Expandable Filter Drawer */}
             {isFilterPanelOpen && (
               <div className="pt-3 border-t border-slate-100 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-150">
                 <div className="flex flex-wrap items-center justify-between gap-2.5">
@@ -1030,6 +1086,10 @@ export default function MenuHubScreen() {
                 filteredAndSortedItems.map((item, idx) => {
                   const stockSummary = getItemStockSummary(item)
                   const itemStore = stores.find((s) => s.id === item.storeId)
+                  const itemCoverImg =
+                    item.productType === "simple" && item.gallery && item.gallery.length > 0
+                      ? (item.gallery.find((g) => g.isCover)?.url || item.gallery[0].url)
+                      : item.image
 
                   return (
                     <div
@@ -1043,7 +1103,7 @@ export default function MenuHubScreen() {
                         {/* Compact Square Image Frame */}
                         <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
                           <Image
-                            src={item.image}
+                            src={itemCoverImg}
                             alt={item.name}
                             fill
                             loading={idx < 4 ? "eager" : "lazy"}
@@ -1058,6 +1118,14 @@ export default function MenuHubScreen() {
                               <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
                                 Sold Out
                               </span>
+                            </div>
+                          )}
+
+                          {/* Photo Count Badge for Simple Products */}
+                          {!stockSummary.isSoldOut && item.productType === "simple" && item.gallery && item.gallery.length > 0 && (
+                            <div className="absolute top-2 left-2 bg-black/65 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-xs">
+                              <span>📷</span>
+                              <span>{item.gallery.length}</span>
                             </div>
                           )}
 
@@ -1105,25 +1173,35 @@ export default function MenuHubScreen() {
 
                           {/* Price & Variant Specs */}
                           <div className="mt-1.5 flex items-baseline justify-between gap-1 flex-wrap">
-                            <span className="font-bold text-sm sm:text-base text-[#006c49]">
-                              {item.variants && item.variants.length > 0 ? (
-                                (() => {
-                                  const prices = item.variants
-                                    .map((v) =>
-                                      v.sellPrice !== undefined && v.sellPrice > 0
-                                        ? v.sellPrice
-                                        : item.price + (v.priceAdjustment || 0)
-                                    )
-                                    .filter((p) => p > 0)
-                                  if (prices.length === 0) return `$${item.price.toFixed(2)}`
-                                  const min = Math.min(...prices)
-                                  const max = Math.max(...prices)
-                                  return min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`
-                                })()
-                              ) : (
-                                `$${item.price.toFixed(2)}`
-                              )}
-                            </span>
+                            {item.showPrice === false ? (
+                              <span className="font-bold text-[11px] sm:text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                                💬 Contact for Price
+                              </span>
+                            ) : item.productType === "simple" && (!item.price || item.price <= 0) ? (
+                              <span className="font-bold text-[11px] sm:text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                                💬 Contact for Price
+                              </span>
+                            ) : (
+                              <span className="font-bold text-sm sm:text-base text-[#006c49]">
+                                {item.variants && item.variants.length > 0 ? (
+                                  (() => {
+                                    const prices = item.variants
+                                      .map((v) =>
+                                        v.sellPrice !== undefined && v.sellPrice > 0
+                                          ? v.sellPrice
+                                          : item.price + (v.priceAdjustment || 0)
+                                      )
+                                      .filter((p) => p > 0)
+                                    if (prices.length === 0) return `$${item.price.toFixed(2)}`
+                                    const min = Math.min(...prices)
+                                    const max = Math.max(...prices)
+                                    return min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`
+                                  })()
+                                ) : (
+                                  `$${item.price.toFixed(2)}`
+                                )}
+                              </span>
+                            )}
                             {item.calories && (
                               <span className="text-[9px] sm:text-[10px] text-[#76777d] bg-[#f8f9ff] px-1.5 py-0.5 rounded border border-[#eef4ff] truncate max-w-[90px]">
                                 {item.calories}
@@ -1133,7 +1211,7 @@ export default function MenuHubScreen() {
                         </div>
                       </div>
 
-                      {/* Add to Bag Button */}
+                      {/* Add to Bag / View Photos Button */}
                       <div className="p-2.5 sm:p-3 pt-0">
                         <button
                           disabled={stockSummary.isSoldOut}
@@ -1146,6 +1224,8 @@ export default function MenuHubScreen() {
                           <span>
                             {stockSummary.isSoldOut
                               ? "Sold Out"
+                              : item.productType === "simple"
+                              ? "📷 View Photos"
                               : item.options && item.options.length > 0
                               ? "✨ Select Options"
                               : "+ Add to Bag"}
@@ -1271,7 +1351,7 @@ export default function MenuHubScreen() {
             </div>
           </div>
 
-          {/* Products / Items Grid — Compact Taobao-style 2-column mobile */}
+          {/* Products / Items Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3 mb-12">
             {storeDishes.length === 0 ? (
               <div className="col-span-full text-center py-12 bg-white rounded-2xl border border-[#eef4ff] shadow-xs">
@@ -1286,6 +1366,10 @@ export default function MenuHubScreen() {
             ) : (
               storeDishes.map((item, idx) => {
                 const stockSummary = getItemStockSummary(item)
+                const itemCoverImg =
+                  item.productType === "simple" && item.gallery && item.gallery.length > 0
+                    ? (item.gallery.find((g) => g.isCover)?.url || item.gallery[0].url)
+                    : item.image
 
                 return (
                   <div
@@ -1296,10 +1380,10 @@ export default function MenuHubScreen() {
                     }`}
                   >
                     <div>
-                      {/* Compact Square Image Frame - Full Image */}
+                      {/* Compact Square Image Frame */}
                       <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
                         <Image
-                          src={item.image}
+                          src={itemCoverImg}
                           alt={item.name}
                           fill
                           loading={idx < 4 ? "eager" : "lazy"}
@@ -1314,6 +1398,14 @@ export default function MenuHubScreen() {
                             <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
                               Sold Out
                             </span>
+                          </div>
+                        )}
+
+                        {/* Photo Count Badge for Simple Products */}
+                        {!stockSummary.isSoldOut && item.productType === "simple" && item.gallery && item.gallery.length > 0 && (
+                          <div className="absolute top-2 left-2 bg-black/65 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-xs">
+                            <span>📷</span>
+                            <span>{item.gallery.length}</span>
                           </div>
                         )}
 
@@ -1339,25 +1431,35 @@ export default function MenuHubScreen() {
 
                         {/* Price & Variant Specs */}
                         <div className="mt-1.5 flex items-baseline justify-between gap-1 flex-wrap">
-                          <span className="font-bold text-sm sm:text-base text-[#006c49]">
-                            {item.variants && item.variants.length > 0 ? (
-                              (() => {
-                                const prices = item.variants
-                                  .map((v) =>
-                                    v.sellPrice !== undefined && v.sellPrice > 0
-                                      ? v.sellPrice
-                                      : item.price + (v.priceAdjustment || 0)
-                                  )
-                                  .filter((p) => p > 0)
-                                if (prices.length === 0) return `$${item.price.toFixed(2)}`
-                                const min = Math.min(...prices)
-                                const max = Math.max(...prices)
-                                return min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`
-                              })()
-                            ) : (
-                              `$${item.price.toFixed(2)}`
-                            )}
-                          </span>
+                          {item.showPrice === false ? (
+                            <span className="font-bold text-[11px] sm:text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                              💬 Contact for Price
+                            </span>
+                          ) : item.productType === "simple" && (!item.price || item.price <= 0) ? (
+                            <span className="font-bold text-[11px] sm:text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                              💬 Contact for Price
+                            </span>
+                          ) : (
+                            <span className="font-bold text-sm sm:text-base text-[#006c49]">
+                              {item.variants && item.variants.length > 0 ? (
+                                (() => {
+                                  const prices = item.variants
+                                    .map((v) =>
+                                      v.sellPrice !== undefined && v.sellPrice > 0
+                                        ? v.sellPrice
+                                        : item.price + (v.priceAdjustment || 0)
+                                    )
+                                    .filter((p) => p > 0)
+                                  if (prices.length === 0) return `$${item.price.toFixed(2)}`
+                                  const min = Math.min(...prices)
+                                  const max = Math.max(...prices)
+                                  return min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`
+                                })()
+                              ) : (
+                                `$${item.price.toFixed(2)}`
+                              )}
+                            </span>
+                          )}
                           {item.calories && (
                             <span className="text-[9px] sm:text-[10px] text-[#76777d] bg-[#f8f9ff] px-1.5 py-0.5 rounded border border-[#eef4ff] truncate max-w-[90px]">
                               {item.calories}
@@ -1367,7 +1469,7 @@ export default function MenuHubScreen() {
                       </div>
                     </div>
 
-                    {/* Add to Bag Button */}
+                    {/* Add to Bag / View Photos Button */}
                     <div className="p-2.5 sm:p-3 pt-0">
                       <button
                         disabled={stockSummary.isSoldOut}
@@ -1380,6 +1482,8 @@ export default function MenuHubScreen() {
                         <span>
                           {stockSummary.isSoldOut
                             ? "Sold Out"
+                            : item.productType === "simple"
+                            ? "📷 View Photos"
                             : item.options && item.options.length > 0
                             ? "✨ Select Options"
                             : "+ Add to Bag"}
@@ -1393,6 +1497,281 @@ export default function MenuHubScreen() {
           </div>
         </main>
       )}
+
+      {/* ── Simple Product Multi-Photo Gallery Modal ── */}
+      {simpleGalleryItem && (() => {
+        const galleryImages =
+          simpleGalleryItem.gallery && simpleGalleryItem.gallery.length > 0
+            ? simpleGalleryItem.gallery.map((g) => g.url)
+            : [simpleGalleryItem.image || "/images/truffle_pasta.jpg"]
+        const currentPhotoUrl = galleryImages[activeGalleryIndex] || galleryImages[0]
+        const parentStore = stores.find((s) => s.id === simpleGalleryItem.storeId) || activeRestaurant
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+            <div
+              className="bg-white text-[#0d1c2d] rounded-2xl sm:rounded-3xl max-w-2xl w-full shadow-2xl max-h-[92vh] overflow-y-auto flex flex-col border border-slate-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 border-b border-[#eef4ff] flex items-center justify-between sticky top-0 bg-white z-20">
+                <div className="min-w-0 flex-1 pr-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#00714d] bg-[#eef4ff] px-2.5 py-0.5 rounded-full border border-emerald-200">
+                      {simpleGalleryItem.category}
+                    </span>
+                    {parentStore && (
+                      <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <span>{parentStore.badgeIcon || "🏬"}</span>
+                        <span>{parentStore.name}</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2 mt-1.5">
+                    <h3 className="text-base sm:text-xl font-black text-[#0d1c2d] truncate">
+                      {simpleGalleryItem.name}
+                    </h3>
+                    <div className="shrink-0 text-right">
+                      {simpleGalleryItem.showPrice === false ? (
+                        <span className="text-xs sm:text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                          💬 Contact for Price
+                        </span>
+                      ) : simpleGalleryItem.price > 0 ? (
+                        <span className="text-lg sm:text-xl font-black text-[#006c49]">
+                          ${simpleGalleryItem.price.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-xs sm:text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                          💬 Contact for Price
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSimpleGalleryItem(null)}
+                  className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center text-base font-bold transition-all shrink-0"
+                  title="Close gallery (Esc)"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 flex-1">
+                {/* Main Hero Photo Container with Swipe + Zoom */}
+                <div
+                  className="relative aspect-4/3 sm:aspect-16/10 w-full rounded-2xl bg-[#0d1c2d] overflow-hidden flex items-center justify-center select-none shadow-inner"
+                  onTouchStart={handleGalleryTouchStart}
+                  onTouchEnd={(e) => handleGalleryTouchEnd(e, galleryImages.length)}
+                >
+                  {/* Photo Display */}
+                  <div
+                    onClick={() => setIsGalleryZoomed(!isGalleryZoomed)}
+                    className={`relative w-full h-full flex items-center justify-center transition-transform duration-300 ${
+                      isGalleryZoomed ? "scale-150 cursor-zoom-out" : "cursor-zoom-in"
+                    }`}
+                  >
+                    <Image
+                      src={currentPhotoUrl}
+                      alt={`${simpleGalleryItem.name} photo ${activeGalleryIndex + 1}`}
+                      fill
+                      priority
+                      sizes="(max-width: 768px) 100vw, 700px"
+                      className="object-contain"
+                    />
+                  </div>
+
+                  {/* Photo Index Counter */}
+                  <div className="absolute top-3 left-3 bg-black/65 backdrop-blur-md text-white text-[11px] font-black px-3 py-1 rounded-full shadow-md flex items-center gap-1.5 pointer-events-none">
+                    <span>📷</span>
+                    <span>{activeGalleryIndex + 1} / {galleryImages.length}</span>
+                  </div>
+
+                  {/* Zoom Toggle Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setIsGalleryZoomed(!isGalleryZoomed)}
+                    className="absolute top-3 right-3 bg-black/65 hover:bg-black/85 backdrop-blur-md text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-md transition-all flex items-center gap-1"
+                    title="Toggle zoom (or click photo)"
+                  >
+                    <span>🔍</span>
+                    <span>{isGalleryZoomed ? "2x (Zoomed)" : "1x Zoom"}</span>
+                  </button>
+
+                  {/* Left Arrow Navigation Button */}
+                  {galleryImages.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveGalleryIndex((prev) =>
+                          prev > 0 ? prev - 1 : galleryImages.length - 1
+                        )
+                      }
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center text-lg font-bold backdrop-blur-xs transition-all shadow-lg hover:scale-110 active:scale-95"
+                      title="Previous photo (Left Arrow)"
+                    >
+                      ‹
+                    </button>
+                  )}
+
+                  {/* Right Arrow Navigation Button */}
+                  {galleryImages.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveGalleryIndex((prev) =>
+                          prev < galleryImages.length - 1 ? prev + 1 : 0
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center text-lg font-bold backdrop-blur-xs transition-all shadow-lg hover:scale-110 active:scale-95"
+                      title="Next photo (Right Arrow)"
+                    >
+                      ›
+                    </button>
+                  )}
+                </div>
+
+                {/* Thumbnail Strip Carousel */}
+                {galleryImages.length > 1 && (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 scrollbar-none">
+                    {galleryImages.map((imgUrl, idx) => {
+                      const isActive = idx === activeGalleryIndex
+                      return (
+                        <button
+                          key={imgUrl + idx}
+                          type="button"
+                          onClick={() => {
+                            setActiveGalleryIndex(idx)
+                            setIsGalleryZoomed(false)
+                          }}
+                          className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-100 shrink-0 transition-all ${
+                            isActive
+                              ? "ring-3 ring-[#006c49] border-2 border-[#006c49] shadow-md scale-105"
+                              : "opacity-60 hover:opacity-100 border border-slate-200"
+                          }`}
+                        >
+                          <Image
+                            src={imgUrl}
+                            alt={`Thumbnail ${idx + 1}`}
+                            fill
+                            sizes="80px"
+                            className="object-cover"
+                          />
+                          <div className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] font-bold px-1 rounded-tl">
+                            {idx + 1}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Product Description & Details */}
+                <div className="bg-[#f8f9ff] border border-[#eef4ff] rounded-2xl p-4 space-y-3">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                      Product Overview
+                    </h4>
+                    <p className="text-xs sm:text-sm text-[#0d1c2d] leading-relaxed whitespace-pre-line">
+                      {simpleGalleryItem.description || "No description provided."}
+                    </p>
+                  </div>
+
+                  {/* Specs / Tags Badges */}
+                  <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200/70">
+                    {simpleGalleryItem.calories && (
+                      <span className="text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
+                        📐 Specs: {simpleGalleryItem.calories}
+                      </span>
+                    )}
+                    {simpleGalleryItem.prepTime && (
+                      <span className="text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
+                        ⏱️ Delivery / Prep: {simpleGalleryItem.prepTime}
+                      </span>
+                    )}
+                    {simpleGalleryItem.tags && simpleGalleryItem.tags.length > 0 && (
+                      simpleGalleryItem.tags.map((t) => (
+                        <span
+                          key={t}
+                          className="text-[11px] font-bold text-[#00714d] bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg"
+                        >
+                          #{t}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Seller Inquiry & Ordering Action Bar */}
+                <div className="pt-2 flex items-center gap-2.5">
+                  {/* Add to Bag Button (Customer Question 1 Answer: Yes) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleAddToCart(simpleGalleryItem, undefined, 1, currentPhotoUrl)
+                      setSimpleGalleryItem(null)
+                      setIsCartOpen(true)
+                    }}
+                    className="flex-1 bg-[#006c49] hover:bg-[#005236] text-white py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                  >
+                    <span>🛍️</span>
+                    <span>Add to Bag</span>
+                    {simpleGalleryItem.showPrice !== false && simpleGalleryItem.price > 0 && (
+                      <span>· ${simpleGalleryItem.price.toFixed(2)}</span>
+                    )}
+                  </button>
+
+                  {/* Telegram Direct Inquiry Button */}
+                  {sellerTelegramUsername && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const storeName = parentStore?.name || "the store"
+                        const priceText =
+                          simpleGalleryItem.showPrice !== false && simpleGalleryItem.price > 0
+                            ? ` ($${simpleGalleryItem.price.toFixed(2)})`
+                            : ""
+                        const msg = `👋 Hello! I'm interested in "${simpleGalleryItem.name}"${priceText} listed on ${storeName}.\nCategory: ${simpleGalleryItem.category}\nIs this item still available?`
+                        const tgUsername = sellerTelegramUsername.replace(/^@/, "")
+                        window.open(`https://t.me/${tgUsername}?text=${encodeURIComponent(msg)}`, "_blank")
+                      }}
+                      className="h-12 px-3.5 rounded-xl flex items-center justify-center gap-1.5 bg-[#2196F3] hover:bg-[#1976d2] text-white font-bold text-xs transition-all shadow-md shrink-0"
+                      title="Direct Chat on Telegram"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current">
+                        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.203-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.829.941z"/>
+                      </svg>
+                      <span className="hidden sm:inline">Telegram</span>
+                    </button>
+                  )}
+
+                  {/* WhatsApp Direct Inquiry Button (Customer Question 2 Answer: Yes) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const storeName = parentStore?.name || "the store"
+                      const priceText =
+                        simpleGalleryItem.showPrice !== false && simpleGalleryItem.price > 0
+                          ? ` ($${simpleGalleryItem.price.toFixed(2)})`
+                          : ""
+                      const msg = `👋 Hello! I'm inquiring about "${simpleGalleryItem.name}"${priceText} listed on ${storeName}.\nCategory: ${simpleGalleryItem.category}\nIs this still available?`
+                      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank")
+                    }}
+                    className="h-12 px-3.5 rounded-xl flex items-center justify-center gap-1.5 bg-[#25D366] hover:bg-[#1ebd5b] text-white font-bold text-xs transition-all shadow-md shrink-0"
+                    title="Direct Chat on WhatsApp"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current">
+                      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+                    </svg>
+                    <span className="hidden sm:inline">WhatsApp</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Item Detail / Variant Selection Modal */}
       {detailItem && (

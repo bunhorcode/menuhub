@@ -41,6 +41,17 @@ export interface VariantCombination {
   barcode?: string                // specific barcode/SKU code for this combination
 }
 
+// ── Simple Gallery Product Types ─────────────────────────────────────────────
+/** "variant" = existing SKU/options product | "simple" = gallery product, no options/SKU */
+export type ProductType = "simple" | "variant"
+
+/** A single image in a Simple Product's photo gallery */
+export interface ProductGalleryImage {
+  url: string         // Supabase storage public URL
+  sortOrder: number   // 0-based display order (lower = shown first)
+  isCover: boolean    // true for the card thumbnail / hero image
+}
+
 export interface SellerProfile {
   id: string
   userId: string
@@ -87,6 +98,9 @@ export interface StoreMenuItem {
   barcode?: string // Barcode / SKU / UPC code for inventory tracking & POS scanning
   options?: OptionGroup[] // Dynamic variant groups (Color, Size, Sugar Level, etc.)
   variants?: VariantCombination[] // Multi-attribute combination matrix (e.g. Red/S = 2, Red/XL = 0)
+  // ── Simple Gallery Product fields ─────────────────────────────────────────
+  productType?: ProductType        // "variant" (default, backward-compat) | "simple" (no SKU/options)
+  showPrice?: boolean              // true (default) = show price; false = "Contact for Price"
+  gallery?: ProductGalleryImage[]  // Multi-image gallery for Simple Products
   createdAt: string
 }
-

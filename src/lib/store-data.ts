@@ -1,5 +1,5 @@
 import { createClient } from "./supabase/client"
-import { Store, StoreMenuItem, SellerProfile, OptionGroup, VariantCombination } from "./seller-types"
+import { Store, StoreMenuItem, SellerProfile, OptionGroup, VariantCombination, ProductType, ProductGalleryImage } from "./seller-types"
 import { optimizeImage } from "./image-optimizer"
 
 export const DEFAULT_STORES: Store[] = []
@@ -51,7 +51,15 @@ interface DbMenuItemRow {
   stock?: number | null
   cost_price?: number | null
   barcode?: string | null
-  options: OptionGroup[] | { groups?: OptionGroup[]; variants?: VariantCombination[]; stock?: number; costPrice?: number } | null
+  options: OptionGroup[] | {
+    groups?: OptionGroup[]
+    variants?: VariantCombination[]
+    stock?: number
+    costPrice?: number
+    productType?: ProductType
+    showPrice?: boolean
+    gallery?: ProductGalleryImage[]
+  } | null
   created_at: string
 }
 
@@ -89,11 +97,14 @@ function mapDbStore(row: DbStoreRow): Store {
 }
 
 function mapDbMenuItem(row: DbMenuItemRow): StoreMenuItem {
-  // Parse options & variants matrix & stock metadata — handle both array and { groups, variants, stock, costPrice } object
+  // Parse options & variants matrix & stock metadata — handle both array and extended JSONB object
   let parsedOptions: OptionGroup[] | undefined = undefined
   let parsedVariants: VariantCombination[] | undefined = undefined
   let parsedStock: number | undefined = typeof row.stock === "number" ? row.stock : undefined
   let parsedCostPrice: number | undefined = typeof row.cost_price === "number" ? row.cost_price : undefined
+  let parsedProductType: ProductType | undefined = undefined
+  let parsedShowPrice: boolean | undefined = undefined
+  let parsedGallery: ProductGalleryImage[] | undefined = undefined
 
   if (row.options) {
     try {
@@ -108,6 +119,16 @@ function mapDbMenuItem(row: DbMenuItemRow): StoreMenuItem {
         }
         if (typeof raw.costPrice === "number" && parsedCostPrice === undefined) {
           parsedCostPrice = raw.costPrice
+        }
+        // ── Simple Gallery Product fields ───────────────────────────────────
+        if (raw.productType === "simple" || raw.productType === "variant") {
+          parsedProductType = raw.productType as ProductType
+        }
+        if (typeof raw.showPrice === "boolean") {
+          parsedShowPrice = raw.showPrice
+        }
+        if (Array.isArray(raw.gallery) && raw.gallery.length > 0) {
+          parsedGallery = raw.gallery as ProductGalleryImage[]
         }
       }
     } catch {
@@ -133,6 +154,9 @@ function mapDbMenuItem(row: DbMenuItemRow): StoreMenuItem {
     barcode: row.barcode || undefined,
     options: parsedOptions,
     variants: parsedVariants,
+    productType: parsedProductType,
+    showPrice: parsedShowPrice,
+    gallery: parsedGallery,
     createdAt: row.created_at,
   }
 }
@@ -303,23 +327,38 @@ export async function getMenuItems(storeId?: string): Promise<StoreMenuItem[]> {
 export async function saveMenuItem(item: Omit<StoreMenuItem, "id" | "createdAt"> & { id?: string }): Promise<StoreMenuItem | null> {
   try {
     const supabase = createClient()
+
+    // Always use the extended object format so we can store gallery/productType/showPrice
+    const needsExtendedFormat =
+      item.productType !== undefined ||
+      item.showPrice !== undefined ||
+      (item.gallery && item.gallery.length > 0) ||
+      item.variants?.length ||
+      item.stock !== undefined ||
+      item.costPrice !== undefined
+
     let optionsPayload:
       | OptionGroup[]
-      | { groups?: OptionGroup[]; variants?: VariantCombination[]; stock?: number; costPrice?: number }
+      | {
+          groups?: OptionGroup[]
+          variants?: VariantCombination[]
+          stock?: number
+          costPrice?: number
+          productType?: ProductType
+          showPrice?: boolean
+          gallery?: ProductGalleryImage[]
+        }
       | null = null
 
-    if (item.variants && item.variants.length > 0) {
+    if (needsExtendedFormat) {
       optionsPayload = {
         groups: item.options || [],
-        variants: item.variants,
-        stock: item.stock,
-        costPrice: item.costPrice,
-      }
-    } else if (item.stock !== undefined || item.costPrice !== undefined) {
-      optionsPayload = {
-        groups: item.options || [],
-        stock: item.stock,
-        costPrice: item.costPrice,
+        ...(item.variants && item.variants.length > 0 ? { variants: item.variants } : {}),
+        ...(item.stock !== undefined ? { stock: item.stock } : {}),
+        ...(item.costPrice !== undefined ? { costPrice: item.costPrice } : {}),
+        ...(item.productType !== undefined ? { productType: item.productType } : {}),
+        ...(item.showPrice !== undefined ? { showPrice: item.showPrice } : {}),
+        ...(item.gallery && item.gallery.length > 0 ? { gallery: item.gallery } : {}),
       }
     } else if (item.options && item.options.length > 0) {
       optionsPayload = item.options

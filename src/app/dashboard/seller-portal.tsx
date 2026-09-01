@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { type User } from "@supabase/supabase-js"
-import { SellerProfile, Store, StoreMenuItem, OptionGroup, OptionValue, VariantCombination } from "@/lib/seller-types"
+import { SellerProfile, Store, StoreMenuItem, OptionGroup, OptionValue, VariantCombination, ProductType, ProductGalleryImage } from "@/lib/seller-types"
 import {
   getSellerProfile,
   saveSellerProfile,
@@ -381,6 +381,15 @@ export function SellerPortal({ user }: { user: User }) {
   } | null>(null)
   const [isGeneratingBarcode, setIsGeneratingBarcode] = useState(false)
 
+  // ── Simple Gallery Product states ─────────────────────────────────────────
+  const [itemProductType, setItemProductType] = useState<ProductType>("variant")
+  const [itemShowPrice, setItemShowPrice] = useState<boolean>(true)
+  const [itemGallery, setItemGallery] = useState<ProductGalleryImage[]>([])
+  const [isUploadingGallery, setIsUploadingGallery] = useState(false)
+  const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null)
+  // Type-switch confirmation dialog
+  const [pendingTypeSwitch, setPendingTypeSwitch] = useState<ProductType | null>(null)
+
   // ── Stock & Inventory Hub States ──────────────────────────────────────────
   const [activeStoreTab, setActiveStoreTab] = useState<"catalog" | "inventory">("catalog")
   const [inventorySearch, setInventorySearch] = useState("")
@@ -409,6 +418,95 @@ export function SellerPortal({ user }: { user: User }) {
 
     return () => clearTimeout(timer)
   }, [itemBarcode, editingItemId])
+
+  // ── Simple Gallery Product Helpers ────────────────────────────────────────
+  const MAX_GALLERY_IMAGES = 15
+
+  const handleGalleryUploadFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files)
+    if (fileArray.length === 0) return
+
+    setGalleryUploadError(null)
+    const availableSlots = MAX_GALLERY_IMAGES - itemGallery.length
+    if (availableSlots <= 0) {
+      setGalleryUploadError(`Maximum limit of ${MAX_GALLERY_IMAGES} gallery images reached.`)
+      return
+    }
+
+    const filesToUpload = fileArray.slice(0, availableSlots)
+    if (fileArray.length > availableSlots) {
+      setGalleryUploadError(`Only ${availableSlots} more image(s) could be added (max ${MAX_GALLERY_IMAGES}).`)
+    }
+
+    setIsUploadingGallery(true)
+    try {
+      const uploadedImages: ProductGalleryImage[] = []
+      let hadCover = itemGallery.some((img) => img.isCover)
+
+      for (let i = 0; i < filesToUpload.length; i++) {
+        const file = filesToUpload[i]
+        const { url, error } = await uploadStoreImage(file, "products")
+        if (url) {
+          const isCover = !hadCover && uploadedImages.length === 0
+          if (isCover) hadCover = true
+          uploadedImages.push({
+            url,
+            sortOrder: itemGallery.length + uploadedImages.length,
+            isCover,
+          })
+        } else if (error) {
+          setGalleryUploadError(`Failed to upload ${file.name}: ${error}`)
+        }
+      }
+
+      if (uploadedImages.length > 0) {
+        setItemGallery((prev) => [...prev, ...uploadedImages])
+        // If no main image is set or current image is default, update with first uploaded image
+        if (!itemImage || itemImage.includes("truffle_pasta") || itemImage.includes("bistro_delight")) {
+          setItemImage(uploadedImages[0].url)
+        }
+      }
+    } catch {
+      setGalleryUploadError("An error occurred while uploading gallery images.")
+    } finally {
+      setIsUploadingGallery(false)
+    }
+  }
+
+  const handleSetCoverImage = (index: number) => {
+    setItemGallery((prev) =>
+      prev.map((img, i) => ({
+        ...img,
+        isCover: i === index,
+      }))
+    )
+    if (itemGallery[index]) {
+      setItemImage(itemGallery[index].url)
+    }
+  }
+
+  const handleDeleteGalleryImage = (index: number) => {
+    setItemGallery((prev) => {
+      const isDeletingCover = prev[index]?.isCover
+      const next = prev.filter((_, i) => i !== index)
+      if (next.length === 0) return []
+      if (isDeletingCover) {
+        next[0].isCover = true
+        setItemImage(next[0].url)
+      }
+      return next.map((img, i) => ({ ...img, sortOrder: i }))
+    })
+  }
+
+  const handleMoveGalleryImage = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= itemGallery.length) return
+    setItemGallery((prev) => {
+      const copy = [...prev]
+      const [moved] = copy.splice(fromIndex, 1)
+      copy.splice(toIndex, 0, moved)
+      return copy.map((img, i) => ({ ...img, sortOrder: i }))
+    })
+  }
 
   const handleUploadProductImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -648,6 +746,10 @@ export function SellerPortal({ user }: { user: User }) {
             ? generateCombinations(itemToEdit.options)
             : []
       )
+      // Simple Gallery fields
+      setItemProductType(itemToEdit.productType || "variant")
+      setItemShowPrice(itemToEdit.showPrice !== false) // default true
+      setItemGallery(itemToEdit.gallery || [])
     } else {
       setEditingItemId(null)
       setItemName("")
@@ -665,7 +767,13 @@ export function SellerPortal({ user }: { user: User }) {
       setBarcodeStatus(null)
       setItemOptions([])
       setItemVariants([])
+      // Simple Gallery defaults
+      setItemProductType("variant")
+      setItemShowPrice(true)
+      setItemGallery([])
     }
+    setPendingTypeSwitch(null)
+    setGalleryUploadError(null)
     setIsItemModalOpen(true)
   }
 
@@ -722,16 +830,22 @@ export function SellerPortal({ user }: { user: User }) {
       category: itemCategory,
       price: parseFloat(itemPrice) || 0,
       description: itemDescription,
-      image: itemImage,
+      image: itemProductType === "simple" && itemGallery.length > 0
+        ? (itemGallery.find((g) => g.isCover)?.url || itemGallery[0].url)
+        : itemImage,
       tags: tagsArray,
       calories: itemCalories,
       prepTime: itemPrepTime,
       available: itemAvailable,
-      stock: validVariants && validVariants.length > 0 ? undefined : validStock,
+      stock: itemProductType === "simple" ? undefined : (validVariants && validVariants.length > 0 ? undefined : validStock),
       costPrice: validCost,
       barcode: itemBarcode.trim() || undefined,
-      options: cleanedOptions.length > 0 ? cleanedOptions : undefined,
-      variants: validVariants && validVariants.length > 0 ? validVariants : undefined,
+      options: itemProductType === "simple" ? undefined : (cleanedOptions.length > 0 ? cleanedOptions : undefined),
+      variants: itemProductType === "simple" ? undefined : (validVariants && validVariants.length > 0 ? validVariants : undefined),
+      // Simple Gallery fields
+      productType: itemProductType,
+      showPrice: itemShowPrice,
+      gallery: itemProductType === "simple" && itemGallery.length > 0 ? itemGallery : undefined,
     })
 
     if (saved) {
@@ -1329,9 +1443,17 @@ export function SellerPortal({ user }: { user: User }) {
                               <h4 className="font-bold text-xs sm:text-sm text-[#0d1c2d] line-clamp-1">
                                 {item.name}
                               </h4>
-                              <span className="font-bold text-xs sm:text-sm text-[#006c49] shrink-0">
-                                ${item.price.toFixed(2)}
-                              </span>
+                              <div className="text-right shrink-0">
+                                {item.showPrice === false ? (
+                                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                    💬 Contact
+                                  </span>
+                                ) : (
+                                  <span className="font-bold text-xs sm:text-sm text-[#006c49]">
+                                    ${item.price.toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             {item.description && (
@@ -1346,13 +1468,22 @@ export function SellerPortal({ user }: { user: User }) {
                                   🏷️ {item.barcode}
                                 </span>
                               )}
-                              {item.variants && item.variants.length > 0 ? (
+                              {item.productType === "simple" ? (
+                                <span className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-semibold">
+                                  🖼️ {item.gallery?.length || 1} Photos
+                                </span>
+                              ) : item.variants && item.variants.length > 0 ? (
                                 <span className="text-[9px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium">
                                   {item.variants.length} SKUs
                                 </span>
                               ) : (
                                 <span className="text-[9px] bg-[#eef4ff] text-[#00714d] px-1.5 py-0.5 rounded font-semibold">
                                   📦 {stockCount} units
+                                </span>
+                              )}
+                              {item.showPrice === false && (
+                                <span className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded font-medium">
+                                  Hidden Price
                                 </span>
                               )}
                             </div>
@@ -2400,6 +2531,104 @@ export function SellerPortal({ user }: { user: User }) {
             </div>
 
             <form onSubmit={handleSaveItem} className="space-y-4 text-xs">
+              {/* ── Product Architecture Type Selector ── */}
+              <div className="bg-[#f8f9ff] p-3 rounded-2xl border border-[#ccdbf2] space-y-2">
+                <label className="block text-xs font-bold text-[#0d1c2d]">
+                  Product Type Architecture *
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* Simple Product Option */}
+                  <div
+                    onClick={() => {
+                      if (itemProductType !== "simple") {
+                        if (itemOptions.length > 0 || itemVariants.length > 0) {
+                          setPendingTypeSwitch("simple")
+                        } else {
+                          setItemProductType("simple")
+                        }
+                      }
+                    }}
+                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      itemProductType === "simple"
+                        ? "border-[#006c49] bg-emerald-50/60 shadow-xs"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-lg">🖼️</span>
+                      <span className="font-bold text-xs text-[#0d1c2d]">Simple Gallery Product</span>
+                    </div>
+                    <p className="text-[10px] text-[#76777d] leading-relaxed">
+                      Single unique item (e.g. car, watch, art, real estate) with multi-photo gallery. No SKUs or size groups.
+                    </p>
+                  </div>
+
+                  {/* Variant Product Option */}
+                  <div
+                    onClick={() => {
+                      if (itemProductType !== "variant") {
+                        if (itemGallery.length > 0) {
+                          setPendingTypeSwitch("variant")
+                        } else {
+                          setItemProductType("variant")
+                        }
+                      }
+                    }}
+                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      itemProductType === "variant"
+                        ? "border-[#006c49] bg-emerald-50/60 shadow-xs"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-lg">🧩</span>
+                      <span className="font-bold text-xs text-[#0d1c2d]">Variant Product</span>
+                    </div>
+                    <p className="text-[10px] text-[#76777d] leading-relaxed">
+                      Multi-option product (e.g. clothing with Color/Size matrix, menu items) with variant SKU pricing.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Type Switch Confirmation Modal */}
+              {pendingTypeSwitch && (
+                <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+                  <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-amber-200 animate-in fade-in zoom-in-95">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center text-lg mb-2.5">
+                      ⚠️
+                    </div>
+                    <h4 className="font-bold text-sm text-[#0d1c2d]">
+                      Switch to {pendingTypeSwitch === "simple" ? "Simple Gallery Product" : "Variant Product"}?
+                    </h4>
+                    <p className="text-xs text-[#76777d] mt-1.5 leading-relaxed">
+                      {pendingTypeSwitch === "simple"
+                        ? "Switching to Simple Product will hide your Option Groups and SKU combinations upon saving. Multi-photo gallery will be enabled."
+                        : "Switching to Variant Product will hide your multi-photo gallery upon saving. Option Groups & SKUs will be enabled."}
+                    </p>
+                    <div className="mt-4 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPendingTypeSwitch(null)}
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setItemProductType(pendingTypeSwitch)
+                          setPendingTypeSwitch(null)
+                        }}
+                        className="px-4 py-1.5 rounded-xl text-xs font-bold bg-[#006c49] text-white hover:bg-[#005236]"
+                      >
+                        Confirm Switch
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block font-semibold text-[#0d1c2d] mb-1">Product / Item Name *</label>
                 <input
@@ -2407,7 +2636,7 @@ export function SellerPortal({ user }: { user: User }) {
                   required
                   value={itemName}
                   onChange={(e) => setItemName(e.target.value)}
-                  placeholder="e.g. Heavyweight Cotton Hoodie or Artisan Coffee"
+                  placeholder="e.g. 2010 Toyota Prius, Vintage Watch, or Heavyweight Cotton Hoodie"
                   className="w-full h-10 px-3.5 bg-white border border-[#c6c6cd] rounded-xl text-[#0d1c2d] outline-none focus:border-[#006c49]"
                 />
               </div>
@@ -2429,14 +2658,17 @@ export function SellerPortal({ user }: { user: User }) {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-[#0d1c2d] mb-1">Retail Selling Price ($) *</label>
+                  <label className="block font-semibold text-[#0d1c2d] mb-1">
+                    Selling Price ($) {itemProductType === "simple" || !itemShowPrice ? "(Optional)" : "*"}
+                  </label>
                   <input
                     type="number"
                     step="0.01"
-                    required
+                    min="0"
+                    required={itemProductType !== "simple" && itemShowPrice}
                     value={itemPrice}
                     onChange={(e) => setItemPrice(e.target.value)}
-                    placeholder="0.00"
+                    placeholder={itemProductType === "simple" && !itemShowPrice ? "Negotiable / Contact" : "0.00"}
                     className="w-full h-10 px-3.5 bg-white border border-[#c6c6cd] rounded-xl text-[#0d1c2d] outline-none focus:border-[#006c49]"
                   />
                 </div>
@@ -2448,12 +2680,39 @@ export function SellerPortal({ user }: { user: User }) {
                   <input
                     type="number"
                     step="0.01"
+                    min="0"
                     value={itemCostPrice}
                     onChange={(e) => setItemCostPrice(e.target.value)}
                     placeholder="12.00"
                     className="w-full h-10 px-3.5 bg-white border border-[#c6c6cd] rounded-xl text-[#0d1c2d] outline-none"
                   />
                 </div>
+              </div>
+
+              {/* ── Price Visibility Toggle ── */}
+              <div className="p-3 bg-slate-50 border border-[#eef4ff] rounded-2xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">{itemShowPrice ? "🏷️" : "💬"}</span>
+                  <div>
+                    <p className="text-xs font-bold text-[#0d1c2d]">
+                      {itemShowPrice ? "Display Price on Store Menu" : "Hide Price ('Contact for Price')"}
+                    </p>
+                    <p className="text-[10px] text-[#76777d]">
+                      {itemShowPrice
+                        ? "Price is shown directly to customers on the catalog cards."
+                        : "Price is hidden. Customers will see a 'Contact for Price' button with Telegram/WhatsApp inquiry."}
+                    </p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={itemShowPrice}
+                    onChange={(e) => setItemShowPrice(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-10 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#006c49]"></div>
+                </label>
               </div>
 
               <div>
@@ -2463,7 +2722,7 @@ export function SellerPortal({ user }: { user: User }) {
                   required
                   value={itemDescription}
                   onChange={(e) => setItemDescription(e.target.value)}
-                  placeholder="Product specs, materials, ingredients, or styling details..."
+                  placeholder="Product specs, year/mileage, materials, condition, ingredients, or styling details..."
                   className="w-full p-3 bg-white border border-[#c6c6cd] rounded-xl text-[#0d1c2d] outline-none"
                 />
               </div>
@@ -2650,650 +2909,822 @@ export function SellerPortal({ user }: { user: User }) {
                 )}
               </div>
 
-              <div>
-                <label className="block font-semibold text-[#0d1c2d] mb-1">
-                  Product / Item Image
-                </label>
-
-                {/* Upload to Supabase Storage Box with Browse & Camera */}
-                <div className="border-2 border-dashed border-[#ccdbf2] hover:border-[#006c49] bg-[#f8f9ff] rounded-2xl p-4 text-center transition-all mb-3">
-                  <div className="flex flex-col items-center justify-center gap-1.5">
-                    <span className="text-2xl">📸</span>
-                    <p className="text-xs font-bold text-[#0d1c2d]">
-                      {isUploadingItemImg
-                        ? "Uploading product photo to Supabase..."
-                        : "Upload Product Image or Capture with Camera"}
-                    </p>
-                    <p className="text-[11px] text-[#76777d]">PNG, JPG, WEBP up to 5MB</p>
-                    <div className="flex items-center justify-center gap-2 mt-1.5 flex-wrap">
-                      <label className="cursor-pointer bg-[#006c49] hover:bg-[#005236] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-all">
-                        <span>📁 Browse Files</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          disabled={isUploadingItemImg}
-                          onChange={handleUploadProductImage}
-                          className="hidden"
-                        />
-                      </label>
-                      <label className="cursor-pointer bg-white hover:bg-emerald-50 text-[#006c49] border border-[#006c49] text-xs font-semibold px-4 py-2 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-all">
-                        <span>📷 Use Camera</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          disabled={isUploadingItemImg}
-                          onChange={handleUploadProductImage}
-                          className="hidden"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                {uploadError && (
-                  <div className="p-2.5 mb-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl">
-                    {uploadError}
-                  </div>
-                )}
-
-                {/* Live Preview (Raw storage URL text box is hidden) */}
-                {itemImage && (
-                  <div className="flex items-center gap-3 mb-2 p-2.5 bg-slate-50 rounded-xl border border-[#eef4ff]">
-                    <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-[#ccdbf2]">
-                      <Image
-                        src={itemImage}
-                        alt="Product Preview"
-                        fill
-                        loading="eager"
-                        sizes="56px"
-                        className="object-cover"
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-[#0d1c2d]">Active Product Photo</p>
-                      <p className="text-[11px] text-[#00714d] font-semibold flex items-center gap-1 mt-0.5">
-                        <span>✓</span> Photo ready
+              {/* ── Conditional Section: Simple Product Gallery vs Variant Product Option Matrix ── */}
+              {itemProductType === "simple" ? (
+                /* ── Simple Product Multi-Photo Gallery ── */
+                <div className="border border-[#ccdbf2] rounded-2xl p-4 bg-[#f8f9ff] space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">📸</span>
+                        <h4 className="text-xs font-bold text-[#0d1c2d]">
+                          Multi-Photo Gallery ({itemGallery.length} / {MAX_GALLERY_IMAGES})
+                        </h4>
+                        {itemGallery.length >= 10 && itemGallery.length < MAX_GALLERY_IMAGES && (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                            Approaching limit ({itemGallery.length}/15)
+                          </span>
+                        )}
+                        {itemGallery.length >= MAX_GALLERY_IMAGES && (
+                          <span className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
+                            Max limit reached (15/15)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-[#76777d] mt-0.5">
+                        Upload 1 to 15 high-res photos. Set the cover image for catalog cards. Auto-optimized to WebP.
                       </p>
                     </div>
-                  </div>
-                )}
-              </div>
 
-              {/* ── Option Groups / Variants Builder ───────────────────────── */}
-              <div className="border border-[#eef4ff] rounded-xl p-4 bg-[#f8f9ff]">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <p className="text-xs font-bold text-[#0d1c2d]">🎨 Item Options / Variants</p>
-                    <p className="text-[10px] text-[#76777d]">
-                      Add dynamic options like Color, Size, Sugar Level, etc.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAddOptionGroup}
-                    className="text-[11px] font-bold text-[#006c49] hover:text-[#005236] bg-white border border-[#ccdbf2] hover:border-[#006c49] px-3 py-1.5 rounded-lg transition-all"
-                  >
-                    + Add Option Group
-                  </button>
-                </div>
-
-                {itemOptions.length === 0 ? (
-                  <div className="text-center py-4 text-[10px] text-[#76777d] border border-dashed border-[#ccdbf2] rounded-lg bg-white">
-                    No options added. Click &quot;+ Add Option Group&quot; to create variants like Color, Size, or Cup Size.
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {itemOptions.map((group, groupIdx) => (
-                      <div
-                        key={group.id}
-                        className="bg-white border border-[#eef4ff] rounded-xl p-3.5 shadow-xs"
+                    {/* Multi-file upload button */}
+                    <div className="flex items-center gap-2">
+                      <label
+                        className={`cursor-pointer px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
+                          itemGallery.length >= MAX_GALLERY_IMAGES || isUploadingGallery
+                            ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                            : "bg-[#006c49] hover:bg-[#005236] text-white"
+                        }`}
                       >
-                        {/* Group Header */}
-                        <div className="flex items-center gap-2 mb-3">
-                          <input
-                            type="text"
-                            value={group.name}
-                            onChange={(e) => handleUpdateGroupName(groupIdx, e.target.value)}
-                            placeholder="Option name (e.g. Color, Size, Sugar Level)"
-                            className="flex-1 h-9 px-3 bg-[#f8f9ff] border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs font-semibold outline-none focus:border-[#006c49]"
-                          />
-                          <label className="flex items-center gap-1 text-[10px] text-[#76777d] whitespace-nowrap cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={group.required}
-                              onChange={() => handleToggleGroupRequired(groupIdx)}
-                              className="w-3.5 h-3.5 accent-[#006c49]"
+                        <span>{isUploadingGallery ? "⏳ Uploading..." : "➕ Add Photos"}</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          disabled={itemGallery.length >= MAX_GALLERY_IMAGES || isUploadingGallery}
+                          onChange={(e) => {
+                            if (e.target.files) {
+                              handleGalleryUploadFiles(e.target.files)
+                            }
+                            e.target.value = ""
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {galleryUploadError && (
+                    <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center justify-between">
+                      <span>⚠️ {galleryUploadError}</span>
+                      <button
+                        type="button"
+                        onClick={() => setGalleryUploadError(null)}
+                        className="text-red-500 hover:text-red-700 font-bold ml-2 text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+
+                  {itemGallery.length === 0 ? (
+                    <div className="text-center py-8 bg-white rounded-2xl border-2 border-dashed border-[#ccdbf2]">
+                      <span className="text-3xl inline-block mb-1.5">🖼️</span>
+                      <p className="text-xs font-bold text-[#0d1c2d]">No gallery photos uploaded yet</p>
+                      <p className="text-[10px] text-[#76777d] mt-0.5">
+                        Select multiple images from your device to showcase this product.
+                      </p>
+                      <label className="mt-3 inline-block cursor-pointer bg-[#006c49] hover:bg-[#005236] text-white text-xs font-semibold px-4 py-1.5 rounded-xl shadow-xs">
+                        <span>Browse Photos</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          disabled={isUploadingGallery}
+                          onChange={(e) => {
+                            if (e.target.files) {
+                              handleGalleryUploadFiles(e.target.files)
+                            }
+                            e.target.value = ""
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {itemGallery.map((img, idx) => (
+                        <div
+                          key={img.url + idx}
+                          className={`relative group bg-white rounded-xl border-2 overflow-hidden shadow-2xs transition-all ${
+                            img.isCover ? "border-[#006c49] ring-2 ring-emerald-300" : "border-slate-200 hover:border-slate-300"
+                          }`}
+                        >
+                          {/* Image Thumbnail */}
+                          <div className="relative aspect-square w-full bg-[#f4f7fc] overflow-hidden flex items-center justify-center">
+                            <Image
+                              src={img.url}
+                              alt={`Gallery photo ${idx + 1}`}
+                              fill
+                              sizes="(max-width: 640px) 50vw, 25vw"
+                              className="object-contain p-1"
                             />
-                            Required
-                          </label>
+                          </div>
+
+                          {/* Cover Badge / Button */}
+                          {img.isCover ? (
+                            <div className="absolute top-1.5 left-1.5 bg-[#006c49] text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-xs flex items-center gap-0.5">
+                              <span>★</span>
+                              <span>Cover</span>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSetCoverImage(idx)}
+                              className="absolute top-1.5 left-1.5 bg-black/60 hover:bg-black/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Set as main cover photo"
+                            >
+                              ☆ Set Cover
+                            </button>
+                          )}
+
+                          {/* Delete Button */}
                           <button
                             type="button"
-                            onClick={() => handleRemoveOptionGroup(groupIdx)}
-                            className="text-red-500 hover:text-red-700 text-xs font-bold px-1.5 py-0.5 rounded hover:bg-red-50 transition-all"
-                            title="Remove option group"
+                            onClick={() => handleDeleteGalleryImage(idx)}
+                            className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-red-600/90 hover:bg-red-700 text-white text-xs font-bold flex items-center justify-center shadow-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Delete photo"
                           >
                             ✕
                           </button>
-                        </div>
 
-                        {/* Option Values */}
-                        <div className="space-y-2.5">
-                          {group.values.map((val, valueIdx) => (
-                            <div
-                              key={val.id}
-                              className="p-2.5 bg-[#f8f9ff] rounded-xl border border-[#eef4ff] flex flex-col sm:flex-row sm:items-center gap-2"
-                            >
-                              {/* Main Row: Image + Value Name + Mobile Delete */}
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
-                                {/* Variant image thumbnail */}
-                                <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-[#ccdbf2] group/img cursor-pointer">
-                                  {val.image ? (
-                                    <Image
-                                      src={val.image}
-                                      alt={val.label || "Variant"}
-                                      fill
-                                      sizes="36px"
-                                      className="object-cover"
-                                    />
-                                  ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-xs text-[#76777d]">
-                                      📷
-                                    </div>
-                                  )}
-                                  <label className="absolute inset-0 cursor-pointer opacity-0 group-hover/img:opacity-100 bg-black/50 flex items-center justify-center text-white text-[9px] font-bold transition-opacity">
-                                    {isUploadingVariantImg && variantUploadTarget?.groupIdx === groupIdx && variantUploadTarget?.valueIdx === valueIdx
-                                      ? "..."
-                                      : "📸"}
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="hidden"
-                                      onChange={(e) => handleUploadVariantImage(groupIdx, valueIdx, e)}
-                                    />
-                                  </label>
-                                </div>
-
-                                {/* Label input - full width on mobile */}
-                                <input
-                                  type="text"
-                                  value={val.label}
-                                  onChange={(e) =>
-                                    handleUpdateOptionValue(groupIdx, valueIdx, "label", e.target.value)
-                                  }
-                                  placeholder="Value (e.g. Red, White, Size S, Large)"
-                                  className="flex-1 h-9 px-3 bg-white border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs font-semibold outline-none focus:border-[#006c49] min-w-[100px]"
-                                />
-
-                                {/* Mobile Delete Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveOptionValue(groupIdx, valueIdx)}
-                                  className="sm:hidden text-red-500 hover:text-red-700 text-xs font-bold p-1.5 rounded hover:bg-red-50 transition-all shrink-0"
-                                  title="Remove value"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-
-                              {/* Secondary Controls: Price Adj & Stock */}
-                              <div className="flex items-center gap-2 justify-end shrink-0 pl-11 sm:pl-0">
-                                {/* Price adjustment */}
-                                <div
-                                  className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-[#c6c6cd]"
-                                  title="Price adjustment"
-                                >
-                                  <span className="text-[11px] text-[#76777d] font-semibold">+$</span>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={val.priceAdjustment || ""}
-                                    onChange={(e) =>
-                                      handleUpdateOptionValue(
-                                        groupIdx,
-                                        valueIdx,
-                                        "priceAdjustment",
-                                        parseFloat(e.target.value) || 0
-                                      )
-                                    }
-                                    placeholder="0.00"
-                                    className="w-14 h-6 text-xs outline-none text-right font-medium text-[#0d1c2d]"
-                                  />
-                                </div>
-
-                                {/* Stock Qty */}
-                                <div
-                                  className={`flex items-center gap-1 px-2 py-1 rounded-lg border ${val.stock !== undefined && val.stock <= 0
-                                      ? "border-red-300 text-red-600 bg-red-50"
-                                      : "border-[#c6c6cd] bg-white text-[#0d1c2d]"
-                                    }`}
-                                  title="Stock quantity (0 = Sold Out, blank = Unlimited)"
-                                >
-                                  <span className="text-[11px] text-[#76777d] font-semibold">Qty:</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    value={val.stock !== undefined ? val.stock : ""}
-                                    onChange={(e) =>
-                                      handleUpdateOptionValue(
-                                        groupIdx,
-                                        valueIdx,
-                                        "stock",
-                                        e.target.value === "" ? undefined : parseInt(e.target.value, 10)
-                                      )
-                                    }
-                                    placeholder="∞"
-                                    className="w-10 h-6 text-xs font-bold outline-none text-center bg-transparent"
-                                  />
-                                </div>
-
-                                {/* Desktop Delete Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveOptionValue(groupIdx, valueIdx)}
-                                  className="hidden sm:inline-flex text-red-400 hover:text-red-600 text-xs font-bold px-1.5 py-1 rounded hover:bg-red-50 transition-all shrink-0"
-                                  title="Remove value"
-                                >
-                                  ✕
-                                </button>
-                              </div>
+                          {/* Bottom Controls: Order & Arrows */}
+                          <div className="p-1.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                            <span className="font-bold text-slate-500 pl-1">#{idx + 1}</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => handleMoveGalleryImage(idx, idx - 1)}
+                                className="w-5 h-5 rounded bg-white hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 font-bold flex items-center justify-center shadow-2xs"
+                                title="Move left"
+                              >
+                                ◀
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === itemGallery.length - 1}
+                                onClick={() => handleMoveGalleryImage(idx, idx + 1)}
+                                className="w-5 h-5 rounded bg-white hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 font-bold flex items-center justify-center shadow-2xs"
+                                title="Move right"
+                              >
+                                ▶
+                              </button>
                             </div>
-                          ))}
+                          </div>
                         </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* ── Variant Product Single Image & Option Groups Builder ── */
+                <>
+                  <div>
+                    <label className="block font-semibold text-[#0d1c2d] mb-1">
+                      Product / Item Image
+                    </label>
 
-                        {/* Add Value Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleAddOptionValue(groupIdx)}
-                          className="mt-2 text-[11px] font-semibold text-[#006c49] hover:text-[#005236] flex items-center gap-1"
-                        >
-                          <span>+</span> Add Value
-                        </button>
+                    {/* Upload to Supabase Storage Box with Browse & Camera */}
+                    <div className="border-2 border-dashed border-[#ccdbf2] hover:border-[#006c49] bg-[#f8f9ff] rounded-2xl p-4 text-center transition-all mb-3">
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <span className="text-2xl">📸</span>
+                        <p className="text-xs font-bold text-[#0d1c2d]">
+                          {isUploadingItemImg
+                            ? "Uploading product photo to Supabase..."
+                            : "Upload Product Image or Capture with Camera"}
+                        </p>
+                        <p className="text-[11px] text-[#76777d]">PNG, JPG, WEBP up to 5MB</p>
+                        <div className="flex items-center justify-center gap-2 mt-1.5 flex-wrap">
+                          <label className="cursor-pointer bg-[#006c49] hover:bg-[#005236] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-all">
+                            <span>📁 Browse Files</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              disabled={isUploadingItemImg}
+                              onChange={handleUploadProductImage}
+                              className="hidden"
+                            />
+                          </label>
+                          <label className="cursor-pointer bg-white hover:bg-emerald-50 text-[#006c49] border border-[#006c49] text-xs font-semibold px-4 py-2 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-all">
+                            <span>📷 Use Camera</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              disabled={isUploadingItemImg}
+                              onChange={handleUploadProductImage}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
                       </div>
-                    ))}
+                    </div>
+
+                    {uploadError && (
+                      <div className="p-2.5 mb-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl">
+                        {uploadError}
+                      </div>
+                    )}
+
+                    {/* Live Preview */}
+                    {itemImage && (
+                      <div className="flex items-center gap-3 mb-2 p-2.5 bg-slate-50 rounded-xl border border-[#eef4ff]">
+                        <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-[#ccdbf2]">
+                          <Image
+                            src={itemImage}
+                            alt="Product Preview"
+                            fill
+                            loading="eager"
+                            sizes="56px"
+                            className="object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-[#0d1c2d]">Active Product Photo</p>
+                          <p className="text-[11px] text-[#00714d] font-semibold flex items-center gap-1 mt-0.5">
+                            <span>✓</span> Photo ready
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {/* ── Multi-Attribute Variant Matrix (SKU Combinations) ── */}
-                {itemOptions.some((g) => g.name.trim() && g.values.some((v) => v.label.trim())) && (
-                  <div className="mt-5 pt-5 border-t border-[#eef4ff]">
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                  {/* ── Option Groups / Variants Builder ───────────────────────── */}
+                  <div className="border border-[#eef4ff] rounded-xl p-4 bg-[#f8f9ff]">
+                    <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-sm font-bold text-[#0d1c2d] flex items-center gap-1.5">
-                          <span>📊 SKU Combination Matrix & Stock</span>
-                        </p>
-                        <p className="text-xs text-[#76777d]">
-                          Configure selling price, cost, inventory, and unique barcodes per variant combination
+                        <p className="text-xs font-bold text-[#0d1c2d]">🎨 Item Options / Variants</p>
+                        <p className="text-[10px] text-[#76777d]">
+                          Add dynamic options like Color, Size, Sugar Level, etc.
                         </p>
                       </div>
                       <button
                         type="button"
-                        onClick={handleSyncCombinations}
-                        className="text-xs font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-                        title="Generate or sync all combinations"
+                        onClick={handleAddOptionGroup}
+                        className="text-[11px] font-bold text-[#006c49] hover:text-[#005236] bg-white border border-[#ccdbf2] hover:border-[#006c49] px-3 py-1.5 rounded-lg transition-all"
                       >
-                        <span>⚡ Sync SKUs</span>
+                        + Add Option Group
                       </button>
                     </div>
 
-                    {/* Bulk Action Controls Bar */}
-                    <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 mb-3 flex flex-wrap items-center gap-2.5">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                        ⚡ Quick Apply All:
-                      </span>
-
-                      {/* Bulk Price */}
-                      <div className="flex items-center bg-white border border-[#ccdbf2] rounded-xl overflow-hidden shadow-2xs">
-                        <span className="text-xs font-bold text-[#006c49] pl-2.5 pr-1">$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={basePriceInputValue}
-                          onChange={(e) => setBasePriceInputValue(e.target.value)}
-                          placeholder={itemPrice || "0.00"}
-                          className="w-16 h-8 text-xs outline-none text-right font-medium text-[#0d1c2d]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const val = parseFloat(basePriceInputValue)
-                            handleSetAllSellPriceToBase(!isNaN(val) ? val : undefined)
-                          }}
-                          className="text-xs font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 px-2.5 h-8 border-l border-[#ccdbf2] transition-all"
-                          title="Apply selling price to all SKUs"
-                        >
-                          Set Price
-                        </button>
-                      </div>
-
-                      {/* Bulk Cost */}
-                      <div className="flex items-center bg-white border border-[#ccdbf2] rounded-xl overflow-hidden shadow-2xs">
-                        <span className="text-xs font-bold text-slate-500 pl-2.5 pr-1">Cost $</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={bulkCostInputValue}
-                          onChange={(e) => setBulkCostInputValue(e.target.value)}
-                          placeholder={itemCostPrice || "0.00"}
-                          className="w-16 h-8 text-xs outline-none text-right font-medium text-[#0d1c2d]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const cost = parseFloat(bulkCostInputValue)
-                            handleSetAllVariantsCost(!isNaN(cost) ? Math.max(0, cost) : (parseFloat(itemCostPrice) || 0))
-                          }}
-                          className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 h-8 border-l border-[#ccdbf2] transition-all"
-                          title="Apply unit cost to all SKUs"
-                        >
-                          Set Cost
-                        </button>
-                      </div>
-
-                      {/* Bulk Stock */}
-                      <div className="flex items-center bg-white border border-[#ccdbf2] rounded-xl overflow-hidden shadow-2xs">
-                        <span className="text-xs font-semibold text-slate-500 pl-2.5 pr-1">Qty</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={bulkStockInputValue}
-                          onChange={(e) => setBulkStockInputValue(e.target.value)}
-                          placeholder="0"
-                          className="w-12 h-8 text-xs outline-none text-center font-bold text-[#0d1c2d]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const qty = parseInt(bulkStockInputValue, 10)
-                            handleSetAllVariantsStock(!isNaN(qty) ? Math.max(0, qty) : 10)
-                          }}
-                          className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 h-8 border-l border-[#ccdbf2] transition-all"
-                          title="Apply stock quantity to all SKUs"
-                        >
-                          Set Stock
-                        </button>
-                      </div>
-
-                      {/* Stock: 0 */}
-                      <button
-                        type="button"
-                        onClick={() => handleSetAllVariantsStock(0)}
-                        className="text-xs font-semibold text-red-600 bg-white border border-red-200 hover:bg-red-50 px-3 h-8 rounded-xl transition-all shadow-2xs"
-                        title="Set stock of all SKUs to 0"
-                      >
-                        Stock: 0
-                      </button>
-
-                      {/* Bulk Barcode */}
-                      <button
-                        type="button"
-                        onClick={handleGenerateAllVariantBarcodes}
-                        disabled={isGeneratingAllSkuBarcodes || itemVariants.length === 0}
-                        className="text-xs font-bold text-[#006c49] bg-white border border-emerald-300 hover:bg-emerald-50 disabled:opacity-50 px-3 h-8 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 ml-auto"
-                        title="Generate unique barcode for all SKU items"
-                      >
-                        <span>🏷️</span>
-                        <span>{isGeneratingAllSkuBarcodes ? "Generating..." : "Gen All Barcodes"}</span>
-                      </button>
-                    </div>
-
-                    {itemVariants.length === 0 ? (
-                      <div className="text-center py-6 bg-white rounded-2xl border border-dashed border-[#ccdbf2]">
-                        <button
-                          type="button"
-                          onClick={handleSyncCombinations}
-                          className="text-xs font-bold text-[#006c49] hover:underline"
-                        >
-                          Click to Generate Combination Matrix ({itemOptions.length} option groups)
-                        </button>
+                    {itemOptions.length === 0 ? (
+                      <div className="text-center py-4 text-[10px] text-[#76777d] border border-dashed border-[#ccdbf2] rounded-lg bg-white">
+                        No options added. Click &quot;+ Add Option Group&quot; to create variants like Color, Size, or Cup Size.
                       </div>
                     ) : (
-                      <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-                        {itemVariants.map((variant) => {
-                          const isOutOfStock = variant.stock <= 0
-                          const margin =
-                            variant.sellPrice !== undefined &&
-                              variant.costPrice !== undefined &&
-                              variant.costPrice > 0
-                              ? variant.sellPrice - variant.costPrice
-                              : null
+                      <div className="space-y-4">
+                        {itemOptions.map((group, groupIdx) => (
+                          <div
+                            key={group.id}
+                            className="bg-white border border-[#eef4ff] rounded-xl p-3.5 shadow-xs"
+                          >
+                            {/* Group Header */}
+                            <div className="flex items-center gap-2 mb-3">
+                              <input
+                                type="text"
+                                value={group.name}
+                                onChange={(e) => handleUpdateGroupName(groupIdx, e.target.value)}
+                                placeholder="Option name (e.g. Color, Size, Sugar Level)"
+                                className="flex-1 h-9 px-3 bg-[#f8f9ff] border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs font-semibold outline-none focus:border-[#006c49]"
+                              />
+                              <label className="flex items-center gap-1 text-[10px] text-[#76777d] whitespace-nowrap cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={group.required}
+                                  onChange={() => handleToggleGroupRequired(groupIdx)}
+                                  className="w-3.5 h-3.5 accent-[#006c49]"
+                                />
+                                Required
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveOptionGroup(groupIdx)}
+                                className="text-red-500 hover:text-red-700 text-xs font-bold px-1.5 py-0.5 rounded hover:bg-red-50 transition-all"
+                                title="Remove option group"
+                              >
+                                ✕
+                              </button>
+                            </div>
 
-                          return (
-                            <div
-                              key={variant.id}
-                              className={`p-3.5 rounded-2xl border transition-all ${isOutOfStock
-                                  ? "bg-red-50/20 border-red-200 hover:border-red-300"
-                                  : "bg-white border-slate-200/80 hover:border-[#006c49]/40 shadow-xs"
-                                }`}
-                            >
-                              {/* Tier 1: Badges & Status Header */}
-                              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100 p-2 mb-2">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  {Object.entries(variant.options).map(([k, v]) => (
-                                    <span
-                                      key={k}
-                                      className="whitespace-nowrap inline-flex items-center text-xs font-bold bg-[#f0fdf4] text-[#00714d] px-2.5 py-1 rounded-lg border border-emerald-200 shadow-2xs"
+                            {/* Option Values */}
+                            <div className="space-y-2.5">
+                              {group.values.map((val, valueIdx) => (
+                                <div
+                                  key={val.id}
+                                  className="p-2.5 bg-[#f8f9ff] rounded-xl border border-[#eef4ff] flex flex-col sm:flex-row sm:items-center gap-2"
+                                >
+                                  {/* Main Row: Image + Value Name + Mobile Delete */}
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {/* Variant image thumbnail */}
+                                    <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-[#ccdbf2] group/img cursor-pointer">
+                                      {val.image ? (
+                                        <Image
+                                          src={val.image}
+                                          alt={val.label || "Variant"}
+                                          fill
+                                          sizes="36px"
+                                          className="object-cover"
+                                        />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-xs text-[#76777d]">
+                                          📷
+                                        </div>
+                                      )}
+                                      <label className="absolute inset-0 cursor-pointer opacity-0 group-hover/img:opacity-100 bg-black/50 flex items-center justify-center text-white text-[9px] font-bold transition-opacity">
+                                        {isUploadingVariantImg && variantUploadTarget?.groupIdx === groupIdx && variantUploadTarget?.valueIdx === valueIdx
+                                          ? "..."
+                                          : "📸"}
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          className="hidden"
+                                          onChange={(e) => handleUploadVariantImage(groupIdx, valueIdx, e)}
+                                        />
+                                      </label>
+                                    </div>
+
+                                    {/* Label input - full width on mobile */}
+                                    <input
+                                      type="text"
+                                      value={val.label}
+                                      onChange={(e) =>
+                                        handleUpdateOptionValue(groupIdx, valueIdx, "label", e.target.value)
+                                      }
+                                      placeholder="Value (e.g. Red, White, Size S, Large)"
+                                      className="flex-1 h-9 px-3 bg-white border border-[#c6c6cd] rounded-lg text-[#0d1c2d] text-xs font-semibold outline-none focus:border-[#006c49] min-w-[100px]"
+                                    />
+
+                                    {/* Mobile Delete Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveOptionValue(groupIdx, valueIdx)}
+                                      className="sm:hidden text-red-500 hover:text-red-700 text-xs font-bold p-1.5 rounded hover:bg-red-50 transition-all shrink-0"
+                                      title="Remove value"
                                     >
-                                      {k}: {v}
-                                    </span>
-                                  ))}
-                                </div>
-
-                                <div className="flex items-center gap-1.5 ml-auto">
-                                  {isOutOfStock ? (
-                                    <span className="whitespace-nowrap inline-flex items-center text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-                                      No Stock
-                                    </span>
-                                  ) : (
-                                    <span className="whitespace-nowrap inline-flex items-center text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                      In Stock
-                                    </span>
-                                  )}
-
-                                  {margin !== null && (
-                                    <span
-                                      className={`whitespace-nowrap inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border ${margin >= 0
-                                          ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                                          : "text-red-700 bg-red-50 border-red-200"
-                                        }`}
-                                    >
-                                      Margin: ${margin.toFixed(2)}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Tier 2: Photo + 4-Column Controls Grid */}
-                              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                                {/* SKU Photo Box with Gallery + Camera options */}
-                                <div className="flex flex-col items-center gap-1 shrink-0">
-                                  {/* Preview thumbnail */}
-                                  <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shadow-2xs">
-                                    {variant.image ? (
-                                      <Image
-                                        src={variant.image}
-                                        alt="SKU Photo"
-                                        fill
-                                        sizes="56px"
-                                        className="object-cover"
-                                      />
-                                    ) : (
-                                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
-                                        <span className="text-xl leading-none">📷</span>
-                                        <span className="text-[9px] font-bold mt-0.5 text-slate-400">Photo</span>
-                                      </div>
-                                    )}
-                                    {isUploadingVariantImg && skuUploadTargetComboId === variant.id && (
-                                      <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
-                                        <span className="text-[10px] font-bold text-[#006c49]">...</span>
-                                      </div>
-                                    )}
+                                      ✕
+                                    </button>
                                   </div>
-                                  {/* Gallery + Camera Buttons */}
-                                  <div className="flex gap-1">
-                                    <label
-                                      className="cursor-pointer flex items-center gap-0.5 text-[9px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 px-1.5 py-1 rounded-lg transition-all"
-                                      title="Upload from gallery / files"
-                                    >
-                                      <span>🖼️</span>
-                                      <span>Gallery</span>
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={(e) => handleUploadSkuVariantImage(variant.id, e)}
-                                      />
-                                    </label>
-                                    <label
-                                      className="cursor-pointer flex items-center gap-0.5 text-[9px] font-bold text-[#006c49] bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 px-1.5 py-1 rounded-lg transition-all"
-                                      title="Take a photo with camera"
-                                    >
-                                      <span>📸</span>
-                                      <span>Camera</span>
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        capture="environment"
-                                        className="hidden"
-                                        onChange={(e) => handleUploadSkuVariantImage(variant.id, e)}
-                                      />
-                                    </label>
-                                  </div>
-                                </div>
 
-                                {/* Form Grid: Cost, Sell, Stock, Barcode */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 flex-1">
-                                  {/* 1. Cost Price */}
-                                  <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                                      Cost Price ($)
-                                    </label>
-                                    <div className="flex items-center h-8 bg-slate-50 border border-slate-200 rounded-lg px-2 focus-within:border-slate-400 focus-within:bg-white transition-all">
-                                      <span className="text-xs text-slate-400 font-semibold">$</span>
+                                  {/* Secondary Controls: Price Adj & Stock */}
+                                  <div className="flex items-center gap-2 justify-end shrink-0 pl-11 sm:pl-0">
+                                    {/* Price adjustment */}
+                                    <div
+                                      className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-[#c6c6cd]"
+                                      title="Price adjustment"
+                                    >
+                                      <span className="text-[11px] text-[#76777d] font-semibold">+$</span>
                                       <input
                                         type="number"
                                         step="0.01"
-                                        min="0"
-                                        value={variant.costPrice !== undefined ? variant.costPrice : ""}
+                                        value={val.priceAdjustment || ""}
                                         onChange={(e) =>
-                                          handleUpdateVariantCostPrice(
-                                            variant.id,
-                                            e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
+                                          handleUpdateOptionValue(
+                                            groupIdx,
+                                            valueIdx,
+                                            "priceAdjustment",
+                                            parseFloat(e.target.value) || 0
                                           )
                                         }
                                         placeholder="0.00"
-                                        className="w-full h-full bg-transparent text-right text-xs font-medium outline-none text-[#0d1c2d]"
+                                        className="w-14 h-6 text-xs outline-none text-right font-medium text-[#0d1c2d]"
                                       />
                                     </div>
-                                  </div>
 
-                                  {/* 2. Sell Price */}
-                                  <div>
-                                    <label className="block text-[10px] font-bold text-[#006c49] mb-1">
-                                      Selling Price ($) *
-                                    </label>
-                                    <div className="flex items-center h-8 bg-emerald-50/50 border border-emerald-200 rounded-lg px-2 focus-within:border-[#006c49] focus-within:bg-white transition-all">
-                                      <span className="text-xs text-[#006c49] font-bold">$</span>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={variant.sellPrice !== undefined ? variant.sellPrice : ""}
-                                        onChange={(e) =>
-                                          handleUpdateVariantSellPrice(
-                                            variant.id,
-                                            e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
-                                          )
-                                        }
-                                        placeholder={itemPrice || "0.00"}
-                                        className="w-full h-full bg-transparent text-right text-xs font-bold text-[#006c49] outline-none"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  {/* 3. Stock Quantity */}
-                                  <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                                      Stock (Units)
-                                    </label>
+                                    {/* Stock Qty */}
                                     <div
-                                      className={`flex items-center h-8 border rounded-lg px-2 transition-all ${isOutOfStock
-                                          ? "bg-red-50/80 border-red-200 focus-within:border-red-400"
-                                          : "bg-slate-50 border-slate-200 focus-within:border-slate-400 focus-within:bg-white"
+                                      className={`flex items-center gap-1 px-2 py-1 rounded-lg border ${val.stock !== undefined && val.stock <= 0
+                                          ? "border-red-300 text-red-600 bg-red-50"
+                                          : "border-[#c6c6cd] bg-white text-[#0d1c2d]"
                                         }`}
+                                      title="Stock quantity (0 = Sold Out, blank = Unlimited)"
                                     >
+                                      <span className="text-[11px] text-[#76777d] font-semibold">Qty:</span>
                                       <input
                                         type="number"
                                         min="0"
                                         step="1"
-                                        value={variant.stock}
+                                        value={val.stock !== undefined ? val.stock : ""}
                                         onChange={(e) =>
-                                          handleUpdateVariantStock(
-                                            variant.id,
-                                            Math.max(0, parseInt(e.target.value, 10) || 0)
+                                          handleUpdateOptionValue(
+                                            groupIdx,
+                                            valueIdx,
+                                            "stock",
+                                            e.target.value === "" ? undefined : parseInt(e.target.value, 10)
                                           )
                                         }
-                                        className={`w-full h-full bg-transparent text-center text-xs font-bold outline-none ${isOutOfStock ? "text-red-600" : "text-[#0d1c2d]"
-                                          }`}
+                                        placeholder="∞"
+                                        className="w-10 h-6 text-xs font-bold outline-none text-center bg-transparent"
                                       />
+                                    </div>
+
+                                    {/* Desktop Delete Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveOptionValue(groupIdx, valueIdx)}
+                                      className="hidden sm:inline-flex text-red-400 hover:text-red-600 text-xs font-bold px-1.5 py-1 rounded hover:bg-red-50 transition-all shrink-0"
+                                      title="Remove value"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Add Value Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleAddOptionValue(groupIdx)}
+                              className="mt-2 text-[11px] font-semibold text-[#006c49] hover:text-[#005236] flex items-center gap-1"
+                            >
+                              <span>+</span> Add Value
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ── Multi-Attribute Variant Matrix (SKU Combinations) ── */}
+                    {itemOptions.some((g) => g.name.trim() && g.values.some((v) => v.label.trim())) && (
+                      <div className="mt-5 pt-5 border-t border-[#eef4ff]">
+                        {/* Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                          <div>
+                            <p className="text-sm font-bold text-[#0d1c2d] flex items-center gap-1.5">
+                              <span>📊 SKU Combination Matrix & Stock</span>
+                            </p>
+                            <p className="text-xs text-[#76777d]">
+                              Configure selling price, cost, inventory, and unique barcodes per variant combination
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleSyncCombinations}
+                            className="text-xs font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+                            title="Generate or sync all combinations"
+                          >
+                            <span>⚡ Sync SKUs</span>
+                          </button>
+                        </div>
+
+                        {/* Bulk Action Controls Bar */}
+                        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 mb-3 flex flex-wrap items-center gap-2.5">
+                          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                            ⚡ Quick Apply All:
+                          </span>
+
+                          {/* Bulk Price */}
+                          <div className="flex items-center bg-white border border-[#ccdbf2] rounded-xl overflow-hidden shadow-2xs">
+                            <span className="text-xs font-bold text-[#006c49] pl-2.5 pr-1">$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={basePriceInputValue}
+                              onChange={(e) => setBasePriceInputValue(e.target.value)}
+                              placeholder={itemPrice || "0.00"}
+                              className="w-16 h-8 text-xs outline-none text-right font-medium text-[#0d1c2d]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const val = parseFloat(basePriceInputValue)
+                                handleSetAllSellPriceToBase(!isNaN(val) ? val : undefined)
+                              }}
+                              className="text-xs font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 px-2.5 h-8 border-l border-[#ccdbf2] transition-all"
+                              title="Apply selling price to all SKUs"
+                            >
+                              Set Price
+                            </button>
+                          </div>
+
+                          {/* Bulk Cost */}
+                          <div className="flex items-center bg-white border border-[#ccdbf2] rounded-xl overflow-hidden shadow-2xs">
+                            <span className="text-xs font-bold text-slate-500 pl-2.5 pr-1">Cost $</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={bulkCostInputValue}
+                              onChange={(e) => setBulkCostInputValue(e.target.value)}
+                              placeholder={itemCostPrice || "0.00"}
+                              className="w-16 h-8 text-xs outline-none text-right font-medium text-[#0d1c2d]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cost = parseFloat(bulkCostInputValue)
+                                handleSetAllVariantsCost(!isNaN(cost) ? Math.max(0, cost) : (parseFloat(itemCostPrice) || 0))
+                              }}
+                              className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 h-8 border-l border-[#ccdbf2] transition-all"
+                              title="Apply unit cost to all SKUs"
+                            >
+                              Set Cost
+                            </button>
+                          </div>
+
+                          {/* Bulk Stock */}
+                          <div className="flex items-center bg-white border border-[#ccdbf2] rounded-xl overflow-hidden shadow-2xs">
+                            <span className="text-xs font-semibold text-slate-500 pl-2.5 pr-1">Qty</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={bulkStockInputValue}
+                              onChange={(e) => setBulkStockInputValue(e.target.value)}
+                              placeholder="0"
+                              className="w-12 h-8 text-xs outline-none text-center font-bold text-[#0d1c2d]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const qty = parseInt(bulkStockInputValue, 10)
+                                handleSetAllVariantsStock(!isNaN(qty) ? Math.max(0, qty) : 10)
+                              }}
+                              className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 h-8 border-l border-[#ccdbf2] transition-all"
+                              title="Apply stock quantity to all SKUs"
+                            >
+                              Set Stock
+                            </button>
+                          </div>
+
+                          {/* Stock: 0 */}
+                          <button
+                            type="button"
+                            onClick={() => handleSetAllVariantsStock(0)}
+                            className="text-xs font-semibold text-red-600 bg-white border border-red-200 hover:bg-red-50 px-3 h-8 rounded-xl transition-all shadow-2xs"
+                            title="Set stock of all SKUs to 0"
+                          >
+                            Stock: 0
+                          </button>
+
+                          {/* Bulk Barcode */}
+                          <button
+                            type="button"
+                            onClick={handleGenerateAllVariantBarcodes}
+                            disabled={isGeneratingAllSkuBarcodes || itemVariants.length === 0}
+                            className="text-xs font-bold text-[#006c49] bg-white border border-emerald-300 hover:bg-emerald-50 disabled:opacity-50 px-3 h-8 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 ml-auto"
+                            title="Generate unique barcode for all SKU items"
+                          >
+                            <span>🏷️</span>
+                            <span>{isGeneratingAllSkuBarcodes ? "Generating..." : "Gen All Barcodes"}</span>
+                          </button>
+                        </div>
+
+                        {itemVariants.length === 0 ? (
+                          <div className="text-center py-6 bg-white rounded-2xl border border-dashed border-[#ccdbf2]">
+                            <button
+                              type="button"
+                              onClick={handleSyncCombinations}
+                              className="text-xs font-bold text-[#006c49] hover:underline"
+                            >
+                              Click to Generate Combination Matrix ({itemOptions.length} option groups)
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                            {itemVariants.map((variant) => {
+                              const isOutOfStock = variant.stock <= 0
+                              const margin =
+                                variant.sellPrice !== undefined &&
+                                  variant.costPrice !== undefined &&
+                                  variant.costPrice > 0
+                                  ? variant.sellPrice - variant.costPrice
+                                  : null
+
+                              return (
+                                <div
+                                  key={variant.id}
+                                  className={`p-3.5 rounded-2xl border transition-all ${isOutOfStock
+                                      ? "bg-red-50/20 border-red-200 hover:border-red-300"
+                                      : "bg-white border-slate-200/80 hover:border-[#006c49]/40 shadow-xs"
+                                    }`}
+                                >
+                                  {/* Tier 1: Badges & Status Header */}
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100 p-2 mb-2">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {Object.entries(variant.options).map(([k, v]) => (
+                                        <span
+                                          key={k}
+                                          className="whitespace-nowrap inline-flex items-center text-xs font-bold bg-[#f0fdf4] text-[#00714d] px-2.5 py-1 rounded-lg border border-emerald-200 shadow-2xs"
+                                        >
+                                          {k}: {v}
+                                        </span>
+                                      ))}
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 ml-auto">
+                                      {isOutOfStock ? (
+                                        <span className="whitespace-nowrap inline-flex items-center text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                                          No Stock
+                                        </span>
+                                      ) : (
+                                        <span className="whitespace-nowrap inline-flex items-center text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                          In Stock
+                                        </span>
+                                      )}
+
+                                      {margin !== null && (
+                                        <span
+                                          className={`whitespace-nowrap inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border ${margin >= 0
+                                              ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                                              : "text-red-700 bg-red-50 border-red-200"
+                                            }`}
+                                        >
+                                          Margin: ${margin.toFixed(2)}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
-                                  {/* 4. SKU Barcode */}
-                                  <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                                      SKU Barcode
-                                    </label>
-                                    {/* Input row */}
-                                    <div className="flex items-center h-8 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:border-[#006c49] transition-all">
-                                      <input
-                                        type="text"
-                                        value={variant.barcode || ""}
-                                        onChange={(e) => handleUpdateVariantBarcode(variant.id, e.target.value)}
-                                        placeholder="EAN-13 / SKU code"
-                                        className="w-full h-full px-2 text-xs font-mono text-[#0d1c2d] outline-none"
-                                      />
-                                      {/* ⚡ Auto-gen */}
-                                      <button
-                                        type="button"
-                                        onClick={() => handleGenerateVariantBarcode(variant.id)}
-                                        className="h-full px-2 text-[10px] font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border-l border-slate-200 transition-all whitespace-nowrap"
-                                        title="Auto-generate unique EAN-13 barcode"
-                                      >
-                                        ⚡
-                                      </button>
-                                      {/* 📷 Camera scan */}
-                                      <button
-                                        type="button"
-                                        onClick={() => setSkuBarcodeScannerComboId(variant.id)}
-                                        className="h-full px-2 text-[10px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border-l border-slate-200 transition-all whitespace-nowrap"
-                                        title="Scan barcode with device camera"
-                                      >
-                                        📷
-                                      </button>
+                                  {/* Tier 2: Photo + 4-Column Controls Grid */}
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                    {/* SKU Photo Box with Gallery + Camera options */}
+                                    <div className="flex flex-col items-center gap-1 shrink-0">
+                                      {/* Preview thumbnail */}
+                                      <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shadow-2xs">
+                                        {variant.image ? (
+                                          <Image
+                                            src={variant.image}
+                                            alt="SKU Photo"
+                                            fill
+                                            sizes="56px"
+                                            className="object-cover"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
+                                            <span className="text-xl leading-none">📷</span>
+                                            <span className="text-[9px] font-bold mt-0.5 text-slate-400">Photo</span>
+                                          </div>
+                                        )}
+                                        {isUploadingVariantImg && skuUploadTargetComboId === variant.id && (
+                                          <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
+                                            <span className="text-[10px] font-bold text-[#006c49]">...</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                      {/* Gallery + Camera Buttons */}
+                                      <div className="flex gap-1">
+                                        <label
+                                          className="cursor-pointer flex items-center gap-0.5 text-[9px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 px-1.5 py-1 rounded-lg transition-all"
+                                          title="Upload from gallery / files"
+                                        >
+                                          <span>🖼️</span>
+                                          <span>Gallery</span>
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => handleUploadSkuVariantImage(variant.id, e)}
+                                          />
+                                        </label>
+                                        <label
+                                          className="cursor-pointer flex items-center gap-0.5 text-[9px] font-bold text-[#006c49] bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 px-1.5 py-1 rounded-lg transition-all"
+                                          title="Take a photo with camera"
+                                        >
+                                          <span>📸</span>
+                                          <span>Camera</span>
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            capture="environment"
+                                            className="hidden"
+                                            onChange={(e) => handleUploadSkuVariantImage(variant.id, e)}
+                                          />
+                                        </label>
+                                      </div>
                                     </div>
-                                    {/* Show barcode preview when scanned/generated */}
-                                    {variant.barcode && (
-                                      <p className="text-[9px] font-mono text-slate-400 mt-0.5 truncate" title={variant.barcode}>
-                                        {variant.barcode}
-                                      </p>
-                                    )}
+
+                                    {/* Form Grid: Cost, Sell, Stock, Barcode */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 flex-1">
+                                      {/* 1. Cost Price */}
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                          Cost Price ($)
+                                        </label>
+                                        <div className="flex items-center h-8 bg-slate-50 border border-slate-200 rounded-lg px-2 focus-within:border-slate-400 focus-within:bg-white transition-all">
+                                          <span className="text-xs text-slate-400 font-semibold">$</span>
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={variant.costPrice !== undefined ? variant.costPrice : ""}
+                                            onChange={(e) =>
+                                              handleUpdateVariantCostPrice(
+                                                variant.id,
+                                                e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
+                                              )
+                                            }
+                                            placeholder="0.00"
+                                            className="w-full h-full bg-transparent text-right text-xs font-medium outline-none text-[#0d1c2d]"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {/* 2. Sell Price */}
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-[#006c49] mb-1">
+                                          Selling Price ($) *
+                                        </label>
+                                        <div className="flex items-center h-8 bg-emerald-50/50 border border-emerald-200 rounded-lg px-2 focus-within:border-[#006c49] focus-within:bg-white transition-all">
+                                          <span className="text-xs text-[#006c49] font-bold">$</span>
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={variant.sellPrice !== undefined ? variant.sellPrice : ""}
+                                            onChange={(e) =>
+                                              handleUpdateVariantSellPrice(
+                                                variant.id,
+                                                e.target.value === "" ? undefined : parseFloat(e.target.value) || 0
+                                              )
+                                            }
+                                            placeholder={itemPrice || "0.00"}
+                                            className="w-full h-full bg-transparent text-right text-xs font-bold text-[#006c49] outline-none"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {/* 3. Stock Quantity */}
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                          Stock (Units)
+                                        </label>
+                                        <div
+                                          className={`flex items-center h-8 border rounded-lg px-2 transition-all ${isOutOfStock
+                                              ? "bg-red-50/80 border-red-200 focus-within:border-red-400"
+                                              : "bg-slate-50 border-slate-200 focus-within:border-slate-400 focus-within:bg-white"
+                                            }`}
+                                        >
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value={variant.stock}
+                                            onChange={(e) =>
+                                              handleUpdateVariantStock(
+                                                variant.id,
+                                                Math.max(0, parseInt(e.target.value, 10) || 0)
+                                              )
+                                            }
+                                            className={`w-full h-full bg-transparent text-center text-xs font-bold outline-none ${isOutOfStock ? "text-red-600" : "text-[#0d1c2d]"
+                                              }`}
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {/* 4. SKU Barcode */}
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                          SKU Barcode
+                                        </label>
+                                        {/* Input row */}
+                                        <div className="flex items-center h-8 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:border-[#006c49] transition-all">
+                                          <input
+                                            type="text"
+                                            value={variant.barcode || ""}
+                                            onChange={(e) => handleUpdateVariantBarcode(variant.id, e.target.value)}
+                                            placeholder="EAN-13 / SKU code"
+                                            className="w-full h-full px-2 text-xs font-mono text-[#0d1c2d] outline-none"
+                                          />
+                                          {/* ⚡ Auto-gen */}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleGenerateVariantBarcode(variant.id)}
+                                            className="h-full px-2 text-[10px] font-bold text-[#006c49] bg-emerald-50 hover:bg-emerald-100 border-l border-slate-200 transition-all whitespace-nowrap"
+                                            title="Auto-generate unique EAN-13 barcode"
+                                          >
+                                            ⚡
+                                          </button>
+                                          {/* 📷 Camera scan */}
+                                          <button
+                                            type="button"
+                                            onClick={() => setSkuBarcodeScannerComboId(variant.id)}
+                                            className="h-full px-2 text-[10px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border-l border-slate-200 transition-all whitespace-nowrap"
+                                            title="Scan barcode with device camera"
+                                          >
+                                            📷
+                                          </button>
+                                        </div>
+                                        {/* Show barcode preview when scanned/generated */}
+                                        {variant.barcode && (
+                                          <p className="text-[9px] font-mono text-slate-400 mt-0.5 truncate" title={variant.barcode}>
+                                            {variant.barcode}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            </div>
-                          )
-                        })}
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
 
               <div className="flex items-center gap-2 pt-1">
                 <input
